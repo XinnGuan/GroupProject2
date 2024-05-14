@@ -1,0 +1,15 @@
+---
+title: "EDA"
+author: "Xin"
+date: "2024-05-14"
+output: html_document
+---
+```{r}
+load("Irish.RData")
+```
+
+
+```{r}
+head(Irish)
+```
+
