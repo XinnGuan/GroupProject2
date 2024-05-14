@@ -5,11 +5,83 @@ date: "2024-05-14"
 output: html_document
 ---
 ```{r}
+library(electBook)
 load("Irish.RData")
 ```
 
+```{r}
+head(Irish$survey)
+```
 
 ```{r}
-head(Irish)
+head(Irish$indCons)
+df0 <- Irish$indCons
+df0$sum_dem <- rowSums(Irish$indCons)
 ```
+
+```{r}
+sum(apply(Irish$indCons, 2, function(x) sum(x == 0)))
+#There are many zeros in the demand data frame
+```
+
+```{r}
+colSums(Irish$indCons == 0)
+```
+
+```{r}
+rowSums(Irish$indCons == 0)
+```
+
+```{r}
+head(Irish$extra)
+```
+
+```{r}
+df <- cbind(df0[,"sum_dem"],Irish$extra)
+colnames(df) <- c("sum_demand", colnames(Irish$extra))
+```
+
+```{r}
+head(df)
+```
+
+## Visualizing main characteristics
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# Basic summary of each column
+summary(df)
+#`holy` is all FALSE
+
+# Visualizing distribution of sum_demand
+ggplot(df, aes(x=sum_demand)) + geom_histogram(bins=30) + ggtitle("Distribution of Sum Demand")
+
+# Time series plot of sum_demand
+ggplot(df, aes(x=dateTime, y=sum_demand)) + geom_line() + ggtitle("Time Series of Sum Demand")
+
+# Boxplots to check variation of sum_demand across days of the week
+ggplot(df, aes(x=dow, y=sum_demand)) + geom_boxplot() + ggtitle("Demand Variation by Day of Week")
+
+```
+
+```{r}
+# Scatter plot of sum_demand vs. temperature
+ggplot(df, aes(x=temp, y=sum_demand)) +
+    geom_point(alpha=0.5) +
+    geom_smooth(method="lm", se=FALSE, color="blue") +
+    labs(x="Temperature", y="Sum Demand", title="Relationship Between Temperature and Sum Demand")
+```
+```{r}
+# Line plot for sum_demand across different times of day
+ggplot(df, aes(x=tod, y=sum_demand, group=1)) +
+    geom_point(alpha=0.5) +
+    geom_smooth(color="blue") +
+    labs(x="Time of Day", y="Sum Demand", title="Sum Demand Across Different Times of Day")
+
+```
+
+
 
