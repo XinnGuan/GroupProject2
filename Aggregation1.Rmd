@@ -110,8 +110,21 @@ mean_by_cluster <- df_t %>%
   group_by(cluster) %>%
   summarise(across(everything(), mean, na.rm = TRUE))
 
+mean_by_cluster <- as.data.frame(mean_by_cluster[,-1])
+rownames(mean_by_cluster) <- c("Cluster 1","Cluster 2","Cluster 3","Cluster 4","Cluster 5")
 # View the result
 print(mean_by_cluster)
+```
+
+```{r}
+df0 <- Irish$extra
+df0 <- df0 %>% mutate(dow = ifelse(dow %in% c("Sat", "Sun"), "True", "False")) %>% select(-c(holy,time,dateTime))%>%rename(weekend = dow)
+df0 <-t(df0)
+```
+
+```{r}
+colnames(df0) <- colnames(mean_by_cluster)
+mean_by_cluster <- rbind(mean_by_cluster,df0)
 ```
 
 ```{r}
