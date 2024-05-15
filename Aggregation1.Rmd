@@ -128,6 +128,7 @@ mean_by_cluster <- rbind(mean_by_cluster,df0)
 ```
 
 ```{r}
-save(mean_by_cluster, file = "clusterMean.RData")
+# Save as CSV file
+write.csv(mean_by_cluster, file = "AggregatedData.csv")
 ```
 
