@@ -2,75 +2,93 @@
 title: "Aggretation1"
 author: "Xin"
 date: "2024-05-15"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 ```{r}
 library(electBook)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(proxy)
+library(tibble)
+library(ggplot2)
 data(Irish)
 df <- Irish$indCons
+df$date <- date(Irish$extra$dateTime)
 ```
 
 ```{r}
-# Assuming df is your DataFrame with columns for household_id, dateTime, and demand
-library(dplyr)
-library(lubridate)
+df$date <- as.Date(df$date)
 
-df$date <- as.Date(df$dateTime)  # Ensuring you have a Date column
+# Gather the data into long format
+df_long <- df %>%
+  pivot_longer(cols = -date, names_to = "household_id", values_to = "demand")
+
+# Ensure the date column is of Date type in df_long
+df_long$date <- as.Date(df_long$date)
 
 # Group by household and date, then summarize to create daily profiles
-daily_profiles <- df %>%
+daily_profiles <- df_long %>%
   group_by(household_id, date) %>%
-  summarise(daily_demand = list(sum_demand)) %>%
+  summarise(daily_demand = sum(demand, na.rm = TRUE)) %>%
   pivot_wider(names_from = date, values_from = daily_demand) %>%
   ungroup()
 
-```
+# Replace NA values with zeros (assuming no demand means 0 demand)
+daily_profiles[is.na(daily_profiles)] <- 0
 
-```{r}
-# Install and load the dtw package
-install.packages("dtw")
-library(dtw)
-
-# Function to compute the DTW distance matrix
-compute_dtw_matrix <- function(data) {
-  n <- nrow(data)
-  dist_matrix <- matrix(nrow = n, ncol = n)
-  
-  for (i in 1:(n - 1)) {
-    for (j in (i + 1):n) {
-      dist_matrix[i, j] <- dtw(data[[i]], data[[j]], keep.internals = TRUE)$distance
-      dist_matrix[j, i] <- dist_matrix[i, j]  # Symmetric matrix
-    }
-  }
-  
-  diag(dist_matrix) <- 0  # Distance from itself is zero
-  return(dist_matrix)
+# Compute the cosine similarity matrix
+compute_cosine_similarity_matrix <- function(data) {
+  data_matrix <- as.matrix(data[-1])  # Remove the household_id column
+  similarity_matrix <- proxy::simil(data_matrix, method = "cosine")
+  dist_matrix <- 1 - similarity_matrix
+  return(as.matrix(dist_matrix))
 }
 
-# Assuming daily_profiles is a list of daily demand vectors
-dtw_distances <- compute_dtw_matrix(daily_profiles)
+cosine_distances <- compute_cosine_similarity_matrix(daily_profiles)
 
-```
-
-```{r}
 # Hierarchical clustering
-hc <- hclust(as.dist(dtw_distances), method = "ward.D2")
+hc <- hclust(as.dist(cosine_distances), method = "ward.D2")
 
-# Plot the dendrogram to visualize the clustering
-plot(hc, labels = FALSE)  # Set labels=TRUE if you want to see household IDs
-
+# Plot the dendrogram
+plot(hc, labels = FALSE, main = "Dendrogram of Households", xlab = "Households", ylab = "Height")
+abline(h = 1, col = "red", lty = 2)
+# Create clusters
+clusters <- cutree(hc, k = 7)
+daily_profiles$cluster <- clusters
 ```
 
 ```{r}
+# Summarize the number of households in each cluster
+cluster_summary <- daily_profiles %>%
+  group_by(cluster) %>%
+  summarise(num_households = n())
+
+# Display the summary
+print(cluster_summary)
+
+# Reshape daily_profiles back to long format
+daily_profiles_long <- daily_profiles %>%
+  pivot_longer(cols = -c(household_id, cluster), names_to = "date", values_to = "daily_demand")
+
+# Ensure the date column is of Date type in daily_profiles_long
+daily_profiles_long$date <- as.Date(daily_profiles_long$date)
+
+# Join cluster information back to the original dataframe
+df_with_clusters <- df_long %>%
+  left_join(daily_profiles_long, by = c("household_id", "date"))
+
 # Analyze cluster characteristics
-cluster_analysis <- df %>%
-  left_join(daily_profiles, by = "household_id") %>%
+cluster_analysis <- df_with_clusters %>%
   group_by(cluster) %>%
   summarise(
-    average_demand = mean(sum_demand),
-    peak_time = mean(which.max(daily_demand))
+    average_demand = mean(daily_demand, na.rm = TRUE)
   )
+
 print(cluster_analysis)
+
 
 ```
 

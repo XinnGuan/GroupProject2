@@ -2,7 +2,9 @@
 title: "EDA"
 author: "Xin"
 date: "2024-05-14"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 ```{r}
 library(electBook)
@@ -10,11 +12,7 @@ load("Irish.RData")
 ```
 
 ```{r}
-head(Irish$survey)
-```
-
-```{r}
-head(Irish$indCons)
+head(Irish$indCons[,1:10])
 df0 <- Irish$indCons
 df0$sum_dem <- rowSums(Irish$indCons)
 ```
@@ -22,11 +20,12 @@ df0$sum_dem <- rowSums(Irish$indCons)
 ```{r}
 sum(apply(Irish$indCons, 2, function(x) sum(x == 0)))
 #There are many zeros in the demand data frame
+print(16799*2674)
 ```
 
 ```{r}
 # Count zeros in each column
-col_zero_counts <- colSums(df == 0)
+col_zero_counts <- colSums(Irish$indCons == 0)
 
 # Histogram of columns with more than 100 zeros
 hist(col_zero_counts[col_zero_counts > 100], main="Histogram of Households with More Than 100 Zeros in Record")
@@ -35,7 +34,7 @@ abline(v = 0.5 * nrow(df), col = "red", lwd = 2)
 
 ```{r}
 # Count zeros in each row
-row_zero_counts <- rowSums(df == 0)
+row_zero_counts <- rowSums(Irish$indCons == 0)
 
 hist(row_zero_counts)
 ```
