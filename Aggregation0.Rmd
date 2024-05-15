@@ -14,16 +14,9 @@ library(lubridate)
 library(proxy)
 library(tibble)
 library(ggplot2)
-```
-
-
-```{r}
 data(Irish)
-col_zero_counts <- colSums(Irish$indCons == 0)
-cols_to_remove <- which(col_zero_counts > 30*48)
 df <- Irish$indCons
 df$date <- date(Irish$extra$dateTime)
-df <- df[,-cols_to_remove]
 ```
 
 ```{r}
@@ -61,12 +54,13 @@ hc <- hclust(as.dist(cosine_distances), method = "ward.D2")
 
 # Plot the dendrogram
 plot(hc, labels = FALSE, main = "Dendrogram of Households", xlab = "Households", ylab = "Height")
+abline(h = 1, col = "red", lty = 2)
+# Create clusters
+clusters <- cutree(hc, k = 7)
+daily_profiles$cluster <- clusters
 ```
 
 ```{r}
-# Create clusters
-clusters <- cutree(hc, k = 5)
-daily_profiles$cluster <- clusters
 # Summarize the number of households in each cluster
 cluster_summary <- daily_profiles %>%
   group_by(cluster) %>%
@@ -96,25 +90,5 @@ cluster_analysis <- df_with_clusters %>%
 print(cluster_analysis)
 
 
-```
-
-
-```{r}
-df_t <- as.data.frame(t(df[,-ncol(df)]))
-
-# Step 2: Add the clusters as a new column to the transposed data frame
-df_t$cluster <- clusters
-
-# Step 3: Group by cluster and calculate the mean for each row within each cluster
-mean_by_cluster <- df_t %>%
-  group_by(cluster) %>%
-  summarise(across(everything(), mean, na.rm = TRUE))
-
-# View the result
-print(mean_by_cluster)
-```
-
-```{r}
-save(mean_by_cluster, file = "clusterMean.RData")
 ```
 
