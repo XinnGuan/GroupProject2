@@ -1,0 +1,120 @@
+---
+title: "EDA Vera"
+output: pdf_document
+date: "2024-05-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+load("Irish.RData")
+```
+
+
+```{r}
+library(dplyr)
+```
+
+
+```{r}
+df <- as.data.frame(Irish[2])[,2:6]
+```
+
+```{r}
+summary(df)
+```
+
+Null vals: 
+
+```{r}
+colSums(is.na(df))
+```
+
+
+
+```{r}
+library(ggplot2)
+
+# Histogram of survey.meanDem
+ggplot(df, aes(x=survey.meanDem)) +
+  geom_histogram(binwidth=0.1, fill="skyblue", color="black", alpha=0.7) +
+  theme_minimal() +
+  labs(title="Histogram of survey.meanDem", x="survey.meanDem", y="Frequency")
+```
+
+```{r}
+# Bar plot for survey.SOCIALCLASS
+ggplot(df, aes(x=survey.SOCIALCLASS)) +
+  geom_bar(fill="skyblue", color="black") +
+  theme_minimal() +
+  labs(title="Bar Plot of Social Class", x="Social Class", y="Frequency")
+```
+
+
+```{r}
+# Histogram of survey.BUILT.YEAR
+ggplot(df, aes(x=survey.BUILT.YEAR)) +
+  geom_histogram(binwidth=5, fill="skyblue", color="black", alpha=0.7) +
+  theme_minimal() +
+  labs(title="Histogram of Built Year", x="Year Built", y="Frequency")
+```
+
+```{r}
+# Bar plot for survey.OWNERSHIP
+ggplot(data=df, aes(x=survey.OWNERSHIP)) +
+  geom_bar(fill="skyblue") +
+  theme_minimal() +
+  labs(title="Distribution of Ownership Status", x="Ownership Status", y="Frequency")
+
+```
+
+```{r}
+# Bar plot for survey.HEAT.HOME
+ggplot(data=df, aes(x=survey.HEAT.HOME)) +
+  geom_bar(fill="skyblue") +
+  theme_minimal() +
+  labs(title="Distribution of Home Heating Systems", x="Heating System", y="Frequency")
+
+```
+
+```{r}
+library(GGally)  # For pairwise plots
+```
+
+```{r}
+# Subset the dataframe to include only numerical variables
+numerical_df <- df[, c("survey.meanDem", "survey.BUILT.YEAR")]
+
+# Pairwise plot for numerical variables
+ggpairs(numerical_df, 
+        title = "Pairwise Plot for Numerical Variables")
+
+```
+
+```{r}
+# Box plot for survey.meanDem vs survey.SOCIALCLASS
+ggplot(df, aes(x=survey.SOCIALCLASS, y=survey.meanDem)) +
+  geom_boxplot(fill="skyblue", color="black") +
+  theme_minimal() 
+```
+```{r}
+# Box plot for survey.meanDem vs survey.OWNERSHIP
+ggplot(df, aes(x=survey.OWNERSHIP, y=survey.meanDem)) +
+  geom_boxplot(fill="skyblue", color="black") +
+  theme_minimal()
+```
+
+```{r}
+# Box plot for survey.meanDem vs survey.HEAT.HOME
+ggplot(df, aes(x=survey.HEAT.HOME, y=survey.meanDem)) +
+  geom_boxplot(fill="skyblue", color="black") +
+  theme_minimal() 
+
+```
+
+
+
+
+
