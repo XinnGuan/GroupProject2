@@ -1,0 +1,76 @@
+---
+title: "Aggretation1"
+author: "Xin"
+date: "2024-05-15"
+output: html_document
+---
+```{r}
+library(electBook)
+data(Irish)
+df <- Irish$indCons
+```
+
+```{r}
+# Assuming df is your DataFrame with columns for household_id, dateTime, and demand
+library(dplyr)
+library(lubridate)
+
+df$date <- as.Date(df$dateTime)  # Ensuring you have a Date column
+
+# Group by household and date, then summarize to create daily profiles
+daily_profiles <- df %>%
+  group_by(household_id, date) %>%
+  summarise(daily_demand = list(sum_demand)) %>%
+  pivot_wider(names_from = date, values_from = daily_demand) %>%
+  ungroup()
+
+```
+
+```{r}
+# Install and load the dtw package
+install.packages("dtw")
+library(dtw)
+
+# Function to compute the DTW distance matrix
+compute_dtw_matrix <- function(data) {
+  n <- nrow(data)
+  dist_matrix <- matrix(nrow = n, ncol = n)
+  
+  for (i in 1:(n - 1)) {
+    for (j in (i + 1):n) {
+      dist_matrix[i, j] <- dtw(data[[i]], data[[j]], keep.internals = TRUE)$distance
+      dist_matrix[j, i] <- dist_matrix[i, j]  # Symmetric matrix
+    }
+  }
+  
+  diag(dist_matrix) <- 0  # Distance from itself is zero
+  return(dist_matrix)
+}
+
+# Assuming daily_profiles is a list of daily demand vectors
+dtw_distances <- compute_dtw_matrix(daily_profiles)
+
+```
+
+```{r}
+# Hierarchical clustering
+hc <- hclust(as.dist(dtw_distances), method = "ward.D2")
+
+# Plot the dendrogram to visualize the clustering
+plot(hc, labels = FALSE)  # Set labels=TRUE if you want to see household IDs
+
+```
+
+```{r}
+# Analyze cluster characteristics
+cluster_analysis <- df %>%
+  left_join(daily_profiles, by = "household_id") %>%
+  group_by(cluster) %>%
+  summarise(
+    average_demand = mean(sum_demand),
+    peak_time = mean(which.max(daily_demand))
+  )
+print(cluster_analysis)
+
+```
+

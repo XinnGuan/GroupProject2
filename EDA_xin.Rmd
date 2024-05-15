@@ -25,11 +25,19 @@ sum(apply(Irish$indCons, 2, function(x) sum(x == 0)))
 ```
 
 ```{r}
-colSums(Irish$indCons == 0)
+# Count zeros in each column
+col_zero_counts <- colSums(df == 0)
+
+# Histogram of columns with more than 100 zeros
+hist(col_zero_counts[col_zero_counts > 100], main="Histogram of Households with More Than 100 Zeros in Record")
+abline(v = 0.5 * nrow(df), col = "red", lwd = 2)
 ```
 
 ```{r}
-rowSums(Irish$indCons == 0)
+# Count zeros in each row
+row_zero_counts <- rowSums(df == 0)
+
+hist(row_zero_counts)
 ```
 
 ```{r}
