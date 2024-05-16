@@ -135,6 +135,6 @@ mean_by_cluster <- t(mean_by_cluster)
 
 ```{r}
 # Save as CSV file
-write.csv(mean_by_cluster, file = "AggregatedData1.csv")
+write.csv(mean_by_cluster, file = "AggregatedData1.csv", row.names = FALSE)
 ```
 
