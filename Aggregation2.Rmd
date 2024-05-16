@@ -130,6 +130,7 @@ df0 <-t(df0)
 ```{r}
 colnames(df0) <- colnames(mean_by_cluster)
 mean_by_cluster <- rbind(mean_by_cluster,df0)
+mean_by_cluster <- t(mean_by_cluster)
 ```
 
 ```{r}
