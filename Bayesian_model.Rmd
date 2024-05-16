@@ -1,0 +1,278 @@
+---
+title: "Untitled"
+output: pdf_document
+date: "2024-05-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+```{r}
+aggregated_data <- read.csv("AggregatedData1.csv")
+daily_data <- read.csv("Daily_AggregatedData1.csv")
+```
+
+```{r}
+cluster1_day <- daily_data[, -c(3,4,5,6,7)]
+
+y <- cluster1_day$Cluster.1 
+x1 <- cluster1_day$toy        # time of year
+x2 <- cluster1_day$weekend    # weekend
+x3 <- cluster1_day$temp       # temperature
+```
+
+```{r}
+library(rjags)
+```
+
+For daily data of cluster 1:
+
+```{r}
+model_string <- "model {
+  # Priors for the coefficients
+  beta0 ~ dnorm(0, 0.01)
+  beta1 ~ dnorm(0, 0.01)
+  beta2 ~ dnorm(0, 0.01)
+  beta3 ~ dnorm(0, 0.01)
+  beta4 ~ dnorm(0, 0.01)
+  beta5 ~ dnorm(0, 0.01)
+
+  # Prior for the precision (inverse of variance)
+  tau ~ dgamma(0.01, 0.01)
+  
+  # Initial value for y[1]
+  y[1] ~ dnorm(0, 0.01)
+  
+  # Likelihood
+  for (t in 2:N) {
+    y[t] ~ dnorm(mu[t], tau)
+    mu[t] <- beta0 + beta1 * y[t-1] +                                                # intercept and y[t-1]
+             beta2 * sin(x1[t]) + beta3 * cos(x1[t]) +                               # time of year x1
+             beta4 * x2[t] +                                                         # weekend x2 
+             beta5 * x3[t]                                                           # temperature x3 
+             }
+  
+}
+
+"
+```
+
+
+
+```{r}
+datalist <- list(N = length(y), x1=x1, x2=x2, x3=x3)
+```
+
+
+```{r}
+model <- jags.model(file = textConnection(model_string), 
+                    data = datalist, n.chains = 3)
+update(model, n.iter = 1000)
+
+Nrep = 10000
+
+posterior_sample <- coda.samples(model,
+                       variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5"),
+                       n.iter = Nrep)
+```
+
+```{r}
+summary(posterior_sample)
+```
+
+```{r}
+gelman.diag(posterior_sample)
+```
+
+```{r}
+gelman.plot(posterior_sample)
+```
+
+
+--------------------------------------------------------------------------------------------------------------------------------------
+
+For subset of cluster 1:
+
+```{r}
+cluster1_data <- aggregated_data[, -c(2,3,4,5,6)]
+
+num_rows <- nrow(cluster1_data)
+
+# Take a random sample of 3000 rows from cluster1_data
+set.seed(123)  # Setting seed for reproducibility
+sample_indices <- sample(num_rows, 10000)
+sampled_data <- cluster1_data[sample_indices, ]
+
+y <- sampled_data$Cluster.1 
+x1 <- sampled_data$toy        # time of year
+x2 <- sampled_data$weekend    # weekend
+x3 <- sampled_data$temp       # temperature
+x4 <- sampled_data$tod        # time of day
+```
+
+
+```{r}
+model_string2 <- "model {
+  # Priors for the coefficients
+  beta0 ~ dnorm(0, 0.01)
+  beta1 ~ dnorm(0, 0.01)
+  beta2 ~ dnorm(0, 0.01)
+  beta3 ~ dnorm(0, 0.01)
+  beta4 ~ dnorm(0, 0.01)
+  beta5 ~ dnorm(0, 0.01)
+  beta6 ~ dnorm(0, 0.01)
+  beta7 ~ dnorm(0, 0.01)
+  beta8 ~ dnorm(0, 0.01)
+  beta9 ~ dnorm(0, 0.01)
+  
+  # Prior for the precision (inverse of variance)
+  tau ~ dgamma(0.01, 0.01)
+  sigma <- 1 / sqrt(tau)
+  
+  # Initial value for y[1]
+  y[1] ~ dnorm(0, 0.01)
+  
+  # Likelihood
+  for (t in 2:N) {
+    y[t] ~ dnorm(mu[t], tau)
+    mu[t] <- beta0 + beta1 * y[t-1] +                                                # intercept and y[t-1]
+             beta2 * sin(x1[t]) + beta3 * cos(x1[t]) +                               # time of year x1
+             beta4 * x2[t] +                                                         # weekend x2
+             beta5 * x3[t] +                                                         # temperature x3 
+             beta6 * x4[t] + beta7 * x4[t]^2 + beta8 * x4[t]^3 + beta9 * x4[t]^4     # time of day x4                                
+             }
+  
+}
+
+"
+```
+
+```{r}
+datalist <- list(N = length(y), x1=x1, x2=x2, x3=x3, x4=x4)
+```
+
+
+```{r}
+model <- jags.model(file = textConnection(model_string2), 
+                    data = datalist, n.chains = 3)
+update(model, n.iter = 1000)
+
+Nrep = 10000
+
+posterior_sample <- coda.samples(model,
+                       variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5",
+                                          "beta6", "beta7", "beta8", "beta9"),
+                       n.iter = Nrep)
+```
+
+```{r}
+summary(posterior_sample)
+```
+
+```{r}
+gelman.diag(posterior_sample)
+```
+
+--------------------------------------------------------------------------------------------------------------------------------------
+
+For cluster 2:
+
+```{r}
+cluster2_data <- aggregated_data[, -c(1,3,4,5,6)]
+
+num_rows <- nrow(cluster2_data)
+
+# Take a random sample of 3000 rows from cluster1_data
+set.seed(123)  # Setting seed for reproducibility
+sample_indices <- sample(num_rows, 10000)
+sampled_data <- cluster2_data[sample_indices, ]
+
+y <- sampled_data$Cluster.2 
+x1 <- sampled_data$toy        # time of year
+x2 <- sampled_data$weekend    # weekend
+x3 <- sampled_data$temp       # temperature
+x4 <- sampled_data$tod        # time of day
+```
+
+
+```{r}
+datalist <- list(N = length(y), x1=x1, x2=x2, x3=x3, x4=x4)
+```
+
+
+```{r}
+model <- jags.model(file = textConnection(model_string2), 
+                    data = datalist, n.chains = 3)
+update(model, n.iter = 1000)
+
+Nrep = 10000
+
+posterior_sample <- coda.samples(model,
+                       variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5",
+                                          "beta6", "beta7", "beta8", "beta9"),
+                       n.iter = Nrep)
+```
+
+```{r}
+summary(posterior_sample)
+```
+
+```{r}
+gelman.diag(posterior_sample)
+```
+
+
+--------------------------------------------------------------------------------------------------------------------------------------
+
+For cluster 3:
+
+```{r}
+cluster3_data <- aggregated_data[, -c(1,2,4,5,6)]
+
+num_rows <- nrow(cluster3_data)
+
+# Take a random sample of 3000 rows from cluster1_data
+set.seed(123)  # Setting seed for reproducibility
+sample_indices <- sample(num_rows, 10000)
+sampled_data <- cluster3_data[sample_indices, ]
+
+y <- sampled_data$Cluster.3 
+x1 <- sampled_data$toy        # time of year
+x2 <- sampled_data$weekend    # weekend
+x3 <- sampled_data$temp       # temperature
+x4 <- sampled_data$tod        # time of day
+```
+
+
+```{r}
+datalist <- list(N = length(y), x1=x1, x2=x2, x3=x3, x4=x4)
+```
+
+
+```{r}
+model <- jags.model(file = textConnection(model_string2), 
+                    data = datalist, n.chains = 3)
+update(model, n.iter = 1000)
+
+Nrep = 10000
+
+posterior_sample <- coda.samples(model,
+                       variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5",
+                                          "beta6", "beta7", "beta8", "beta9"),
+                       n.iter = Nrep)
+```
+
+```{r}
+summary(posterior_sample)
+```
+
+Same problem. 
+
+
+
+
+
