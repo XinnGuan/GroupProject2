@@ -419,3 +419,52 @@ ggplot(test_data_6, aes(x = Cluster.6, y = predictions)) +
 ```{r}
 summary(linear_model_6)
 ```
+
+# Conclusion for Linear Regression Models
+
+```{r}
+# Extract coefficients and performance metrics for each cluster
+coefficients_1 <- summary(linear_model_1)$coefficients
+coefficients_2 <- summary(linear_model_2)$coefficients
+coefficients_3 <- summary(linear_model_3)$coefficients
+coefficients_4 <- summary(linear_model_4)$coefficients
+coefficients_5 <- summary(linear_model_5)$coefficients
+coefficients_6 <- summary(linear_model_6)$coefficients
+
+performance_1 <- data.frame(MAE = mae_1, MSE = mse_1, RMSE = rmse_1)
+performance_2 <- data.frame(MAE = mae_2, MSE = mse_2, RMSE = rmse_2)
+performance_3 <- data.frame(MAE = mae_3, MSE = mse_3, RMSE = rmse_3)
+performance_4 <- data.frame(MAE = mae_4, MSE = mse_4, RMSE = rmse_4)
+performance_5 <- data.frame(MAE = mae_5, MSE = mse_5, RMSE = rmse_5)
+performance_6 <- data.frame(MAE = mae_6, MSE = mse_6, RMSE = rmse_6)
+
+# Combine performance metrics into one data frame
+performance_summary <- rbind(
+  data.frame(Cluster = "Cluster 1", performance_1),
+  data.frame(Cluster = "Cluster 2", performance_2),
+  data.frame(Cluster = "Cluster 3", performance_3),
+  data.frame(Cluster = "Cluster 4", performance_4),
+  data.frame(Cluster = "Cluster 5", performance_5),
+  data.frame(Cluster = "Cluster 6", performance_6)
+)
+
+# Print performance summary table
+knitr::kable(performance_summary, caption = "Performance Metrics for Each Cluster")
+
+# Extract coefficients for each cluster and combine them into a single data frame
+coef_summary <- data.frame(
+  #Variable = rownames(coefficients_1),
+  `Cluster 1` = coefficients_1[, "Estimate"],
+  `Cluster 2` = coefficients_2[, "Estimate"],
+  `Cluster 3` = coefficients_3[, "Estimate"],
+  `Cluster 4` = coefficients_4[, "Estimate"],
+  `Cluster 5` = coefficients_5[, "Estimate"],
+  `Cluster 6` = coefficients_6[, "Estimate"]
+)
+
+# Print coefficients summary table
+knitr::kable(coef_summary, caption = "Coefficients Summary for Each Cluster")
+
+
+```
+
