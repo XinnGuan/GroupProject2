@@ -36,26 +36,14 @@ cluster1_trans <- cluster1_trans %>%
     toy_cos = cos(toy)
   )
 
-```
-
-
-
-```{r}
 cluster1_trans <- na.omit(cluster1_trans)
-
-# Fit the linear regression model
-linear_model <- lm(Cluster.1 ~ Cluster.1_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = cluster1_trans)
-
-# Display the summary of the model
-summary(linear_model)
 ```
 
 
 ```{r}
 library(caret)
-library(dplyr)
-# Split the data into training and testing sets
-set.seed(123)  # For reproducibility
+
+# set.seed(123) 
 train_index <- createDataPartition(cluster1_trans$Cluster.1, p = 0.8, list = FALSE)
 train_data <- cluster1_trans[train_index, ]
 test_data <- cluster1_trans[-train_index, ]
