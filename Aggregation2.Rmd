@@ -130,17 +130,98 @@ df0 <-t(df0)
 ```{r}
 colnames(df0) <- colnames(mean_by_cluster)
 mean_by_cluster <- rbind(mean_by_cluster,df0)
-mean_by_cluster <- t(mean_by_cluster)
+mean_by_cluster <- as.data.frame(t(mean_by_cluster))
+# Convert Cluster  and temp columns to numeric, weekend into logic
+mean_by_cluster <- mean_by_cluster %>%
+  mutate(across(starts_with("Cluster"), as.numeric),
+         weekend = as.logical(weekend),
+         temp = as.numeric(temp))
 ```
 
 ```{r}
 # Save as CSV file
-write.csv(mean_by_cluster0, file = "AggregatedData1.csv", row.names = FALSE)
+write.csv(mean_by_cluster, file = "AggregatedData1.csv", row.names = FALSE)
+```
+
+
+
+# ```{r}
+# mean_by_cluster0 <- mean_by_cluster %>% select(-tod)
+# 
+# mean_by_cluster0 <- mean_by_cluster0 %>%
+#   group_by(toy) %>%
+#   summarise(across(starts_with("Cluster"), mean, na.rm = TRUE),
+#             weekend = any(weekend),
+#             temp = mean(temp, na.rm = TRUE))
+# ```
+# 
+# 
+# ```{r}
+# # Save as CSV file
+# write.csv(mean_by_cluster0, file = "Daily_AggregatedData1.csv", row.names = FALSE)
+# ```
+
+
+```{r}
+avg_demand_wide$cluster <- clusters
+```
+
+
+```{r}
+write.csv(avg_demand_wide, file = "cluster_data.csv", row.names = FALSE)
 ```
 
 
 
 ```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Identify the time columns by excluding non-time columns
+time_columns <- grep("^\\d{2}:\\d{2}:\\d{2}$", colnames(avg_demand_wide), value = TRUE)
+
+# Add rowid to avg_demand_wide for sampling
+avg_demand_wide <- avg_demand_wide %>%
+  mutate(rowid = row_number())
+
+# Convert data to long format for plotting
+avg_demand_long <- avg_demand_wide %>%
+  pivot_longer(cols = all_of(time_columns), 
+               names_to = "Time", 
+               values_to = "Demand") %>%
+  mutate(Time = as.numeric(gsub(":", "", Time)))
+
+# Calculate mean demand for each cluster
+mean_demand <- avg_demand_long %>%
+  group_by(cluster, Time) %>%
+  summarize(mean_demand = mean(Demand), .groups = 'drop')
+
+# Plot mean demand for each cluster
+for (cl in unique(avg_demand_wide$cluster)) {
+  # Filter data for the cluster
+  cluster_data <- avg_demand_long %>% filter(cluster == cl)
+  
+  # Sample 10 houses from the cluster
+  sampled_houses <- sample(unique(cluster_data$rowid), 10)
+  sample_data <- cluster_data %>% filter(rowid %in% sampled_houses)
+  
+  # Plot mean demand
+  p <- ggplot() +
+    geom_line(data = mean_demand %>% filter(cluster == cl), 
+              aes(x = Time, y = mean_demand, color = "Mean Demand"), size = 1) +
+    geom_line(data = sample_data, 
+              aes(x = Time, y = Demand, group = rowid, color = as.factor(rowid)), alpha = 0.3) +  # Adjusted transparency
+    labs(title = paste("Cluster", cl),
+         x = "Time",
+         y = "Demand") +
+    scale_color_manual(values = c("Mean Demand" = "red", setNames(rainbow(10), sampled_houses))) +
+    theme_minimal()
+  
+  print(p)
+}
 
 ```
+
 
