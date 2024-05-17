@@ -1,0 +1,171 @@
+---
+title: "EDA_Yuqi"
+author: "Yuqi Zhang"
+date: "2024-05-14"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(data.table)
+library(ggplot2)
+library(dplyr)
+library(GGally)
+library(devtools)
+#install_github("mfasiolo/electBook")
+library(electBook)
+library(rjags)
+library(R2jags)
+#install.packages("INLA",repos=c(getOption("repos"),INLA="https://inla.r-inla-download.org/R/stable"), dep=TRUE)
+library(INLA)
+library(bsts)
+```
+
+
+
+```{r}
+load("Irish.RData")
+str(Irish)
+summary(Irish)
+```
+
+
+```{r}
+demand_data <- as.data.frame(Irish$indCons)
+
+mean_demand <- colMeans(demand_data)
+mean_demand_df <- data.frame(ID = colnames(demand_data), mean_demand = mean_demand)
+
+
+survey_data <- Irish$survey
+survey_data <- merge(survey_data, mean_demand_df, by.x = "ID", by.y = "ID")
+```
+
+The mean demand is a straightforward measure that represents the average electricity consumption of each household over the observation period. By providing a single value per household, it facilitates easy comparison and understanding of overall consumption patterns. Mean demand captures general consumption behaviour, smoothing out short-term fluctuations and anomalies. This measure is effective for identifying major patterns and differences between households.
+
+```{r}
+survey_data$HEAT.WATER <- as.factor(survey_data$HEAT.WATER)
+survey_data$WINDOWS.doubleglazed <- as.factor(survey_data$WINDOWS.doubleglazed)
+survey_data$ResTariffallocation <- as.factor(survey_data$ResTariffallocation)
+survey_data$ResStimulusallocation <- as.factor(survey_data$ResStimulusallocation)
+
+# Boxplots of mean demand by categorical variables
+ggplot(survey_data, aes(x = HEAT.WATER, y = mean_demand)) +
+  geom_boxplot() +
+  labs(title = "Mean Demand by HEAT.WATER", x = "HEAT.WATER", y = "Mean Demand")
+
+# Double glazed window, 5 levels
+ggplot(survey_data, aes(x = WINDOWS.doubleglazed, y = mean_demand)) +
+  geom_boxplot() +
+  labs(title = "Mean Demand by WINDOWS.doubleglazed", x = "WINDOWS.doubleglazed", y = "Mean Demand")
+
+ggplot(survey_data, aes(x = ResTariffallocation, y = mean_demand)) +
+  geom_boxplot() +
+  labs(title = "Mean Demand by ResTariffallocation", x = "ResTariffallocation", y = "Mean Demand")
+
+#residential tariffs allocation
+ggplot(survey_data, aes(x = ResStimulusallocation, y = mean_demand)) +
+  geom_boxplot() +
+  labs(title = "Mean Demand by ResStimulusallocation", x = "ResStimulusallocation", y = "Mean Demand")
+
+# Scatter plots for numerical variables
+ggplot(survey_data, aes(x = HOME.APPLIANCE..White.goods., y = mean_demand)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(title = "Mean Demand by HOME.APPLIANCE..White.goods.", x = "Number of Home Appliances", y = "Mean Demand")
+
+ggplot(survey_data, aes(x = Code, y = mean_demand)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(title = "Mean Demand by Code", x = "Code", y = "Mean Demand")
+
+```
+
+
+```{r}
+# Visualize the daily demand patterns for a sample of households
+library(ggplot2)
+set.seed(123)
+sample_households <- sample(ncol(demand_data), 5)
+
+# Convert to long format for ggplot
+demand_sample <- demand_data[, sample_households]
+demand_long <- data.frame(time = rep(1:nrow(demand_sample), ncol(demand_sample)),
+                          demand = as.vector(as.matrix(demand_sample)),
+                          household = rep(names(demand_sample), each = nrow(demand_sample)))
+
+ggplot(demand_long, aes(x = time, y = demand, color = household)) +
+  geom_line() +
+  labs(title = "Electricity Demand for Sample Households", x = "Time", y = "Demand")
+
+```
+
+```{r}
+# Group households based on the number of home appliances
+survey_data_grouped <- survey_data %>%
+  group_by(HOME.APPLIANCE..White.goods.) %>%
+  summarize(mean_demand = mean(mean_demand, na.rm = TRUE),
+            .groups = 'drop')
+```
+
+
+# Define a Bayesian Model
+
+```{r}
+# Prepare data for JAGS
+jags_data <- list(
+  N = nrow(survey_data_grouped),
+  appliances = survey_data_grouped$HOME.APPLIANCE..White.goods.,
+  demand = survey_data_grouped$mean_demand
+)
+
+# Define the JAGS model
+jags_model <- "
+model {
+  for (i in 1:N) {
+    demand[i] ~ dnorm(mu[i], tau)
+    mu[i] <- beta0 + beta1 * appliances[i]
+  }
+  
+  beta0 ~ dnorm(0, 0.001)
+  beta1 ~ dnorm(0, 0.001)
+  tau ~ dgamma(0.001, 0.001)
+  sigma <- 1 / sqrt(tau)
+}
+"
+
+```
+
+
+```{r}
+# Initial values for MCMC
+init_values <- function() {
+  list(beta0 = rnorm(1), beta1 = rnorm(1), tau = rgamma(1, 1, 1))
+}
+
+# Parameters to monitor
+params <- c("beta0", "beta1", "sigma")
+
+# Run the JAGS model
+jags_fit <- jags(data = jags_data, 
+                 inits = init_values, 
+                 parameters.to.save = params, 
+                 model.file = textConnection(jags_model), 
+                 n.chains = 3, 
+                 n.iter = 2000, 
+                 n.burnin = 1000, 
+                 n.thin = 2)
+
+# Print the results
+print(jags_fit)
+
+```
+
+
+
+
+
+
