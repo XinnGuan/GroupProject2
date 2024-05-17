@@ -1,0 +1,421 @@
+---
+title: "Linear Regerssion"
+author: "Yuqi Zhang"
+date: "2024-05-17"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+library(dplyr)
+library(caret)
+library(ggplot2)
+library(rjags)
+library(coda)
+```
+
+# Data Preparation
+
+We first prepare the data for each cluster.
+
+```{r}
+aggregated_data <- read.csv("AggregatedData1.csv")
+daily_data <- read.csv("Daily_AggregatedData1.csv")
+
+cluster1 <- aggregated_data[, -c(2,3,4,5,6)]
+cluster2 <- aggregated_data[, -c(1,3,4,5,6)]
+cluster3 <- aggregated_data[, -c(1,2,4,5,6)]
+cluster4 <- aggregated_data[, -c(1,2,3,5,6)]
+cluster5 <- aggregated_data[, -c(1,2,3,4,6)]
+cluster6 <- aggregated_data[, -c(1,2,3,4,5)]
+
+cluster1_trans <- cluster1 %>%
+  mutate(Cluster.1_lag1 = lag(Cluster.1, n = 1)) %>%
+  mutate(
+    tod_poly1 = tod,
+    tod_poly2 = tod^2,
+    tod_poly3 = tod^3,
+    tod_poly4 = tod^4,
+    weekend_dummy = ifelse(weekend == "TRUE", 1, 0),
+    toy_sin = sin(toy),
+    toy_cos = cos(toy)
+  ) %>%
+  na.omit()
+
+cluster2_trans <- cluster2 %>%
+  mutate(Cluster.2_lag1 = lag(Cluster.2, n = 1)) %>%
+  mutate(
+    tod_poly1 = tod,
+    tod_poly2 = tod^2,
+    tod_poly3 = tod^3,
+    tod_poly4 = tod^4,
+    weekend_dummy = ifelse(weekend == "TRUE", 1, 0),
+    toy_sin = sin(toy),
+    toy_cos = cos(toy)
+  ) %>%
+  na.omit()
+
+cluster3_trans <- cluster3 %>%
+  mutate(Cluster.3_lag1 = lag(Cluster.3, n = 1)) %>%
+  mutate(
+    tod_poly1 = tod,
+    tod_poly2 = tod^2,
+    tod_poly3 = tod^3,
+    tod_poly4 = tod^4,
+    weekend_dummy = ifelse(weekend == "TRUE", 1, 0),
+    toy_sin = sin(toy),
+    toy_cos = cos(toy)
+  ) %>%
+  na.omit()
+
+
+cluster4_trans <- cluster4 %>%
+  mutate(Cluster.4_lag1 = lag(Cluster.4, n = 1)) %>%
+  mutate(
+    tod_poly1 = tod,
+    tod_poly2 = tod^2,
+    tod_poly3 = tod^3,
+    tod_poly4 = tod^4,
+    weekend_dummy = ifelse(weekend == "TRUE", 1, 0),
+    toy_sin = sin(toy),
+    toy_cos = cos(toy)
+  ) %>%
+  na.omit()
+
+cluster5_trans <- cluster5 %>%
+  mutate(Cluster.5_lag1 = lag(Cluster.5, n = 1)) %>%
+  mutate(
+    tod_poly1 = tod,
+    tod_poly2 = tod^2,
+    tod_poly3 = tod^3,
+    tod_poly4 = tod^4,
+    weekend_dummy = ifelse(weekend == "TRUE", 1, 0),
+    toy_sin = sin(toy),
+    toy_cos = cos(toy)
+  ) %>%
+  na.omit()
+
+cluster6_trans <- cluster6 %>%
+  mutate(Cluster.6_lag1 = lag(Cluster.6, n = 1)) %>%
+  mutate(
+    tod_poly1 = tod,
+    tod_poly2 = tod^2,
+    tod_poly3 = tod^3,
+    tod_poly4 = tod^4,
+    weekend_dummy = ifelse(weekend == "TRUE", 1, 0),
+    toy_sin = sin(toy),
+    toy_cos = cos(toy)
+  ) %>%
+  na.omit()
+```
+
+# Clusrer 1
+
+## Linear Regression Model for Cluster 1
+
+On the basis of `cluster1_trans`, we fit a linear regression model and evaluate its performance:
+
+```{r}
+# Split the data into training and testing sets
+train_index_1 <- 1:floor(0.8 * nrow(cluster1_trans))
+train_data_1 <- cluster1_trans[train_index_1, ]
+test_data_1 <- cluster1_trans[-train_index_1, ]
+
+# Fit the linear regression model
+linear_model_1 <- lm(Cluster.1 ~ Cluster.1_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_1)
+```
+
+## Performance of Predictions
+
+```{r}
+# Make predictions on the testing set
+test_data_1$predictions <- predict(linear_model_1, newdata = test_data_1)
+
+# Calculate prediction error metrics
+mae_1 <- mean(abs(test_data_1$Cluster.1 - test_data_1$predictions))
+mse_1 <- mean((test_data_1$Cluster.1 - test_data_1$predictions)^2)
+rmse_1 <- sqrt(mse_1)
+
+# Print the results
+cat("Mean Absolute Error (MAE):", mae_1, "\n")
+cat("Mean Squared Error (MSE):", mse_1, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse_1, "\n")
+```
+
+```{r}
+# Plot predicted vs true values
+ggplot(test_data_1, aes(x = Cluster.1, y = predictions)) +
+  geom_point(color = 'blue', alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = 'red', linetype = "dashed") +
+  labs(title = "Predicted vs True Values",
+       x = "True Values",
+       y = "Predicted Values") +
+  theme_minimal()
+```
+
+## Linear Regression Model Summary
+
+```{r}
+summary(linear_model_1)
+```
+
+## Analysis
+
+- **Coefficients**:
+  - `Cluster.1_lag1`: The coefficient is very high and significant, indicating a strong autocorrelation in the data.
+  - `temp`: The negative coefficient suggests that an increase in temperature slightly decreases `Cluster.1`.
+  - `tod_poly1`, `tod_poly2`, `tod_poly3`, and `tod_poly4`: These terms capture the non-linear effect of the time of day. Significant coefficients indicate a polynomial relationship with `Cluster.1`.
+  - `weekend_dummy`: The positive and significant coefficient indicates that `Cluster.1` is higher on weekends compared to weekdays.
+  - `toy_sin` and `toy_cos`: These coefficients are not significant, suggesting that the trigonometric transformation of the time of year might not be a strong predictor for `Cluster.1`.
+
+- **Model Fit**:
+  - The R-squared value of 0.9623 indicates that the model explains 96.23% of the variance in `Cluster.1`, which suggests a very good fit.
+
+# Cluster 2
+
+## Linear Regression Model for Cluster 2
+
+```{r}
+# Split the data into training and testing sets
+train_index_2 <- 1:floor(0.8 * nrow(cluster2_trans))
+train_data_2 <- cluster2_trans[train_index_2, ]
+test_data_2 <- cluster2_trans[-train_index_2, ]
+
+# Fit the linear regression model
+linear_model_2 <- lm(Cluster.2 ~ Cluster.2_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_2)
+```
+
+## Performance of Predictions
+
+```{r}
+# Make predictions on the testing set
+test_data_2$predictions <- predict(linear_model_2, newdata = test_data_2)
+
+# Calculate prediction error metrics
+mae_2 <- mean(abs(test_data_2$Cluster.2 - test_data_2$predictions))
+mse_2 <- mean((test_data_2$Cluster.2 - test_data_2$predictions)^2)
+rmse_2 <- sqrt(mse_2)
+
+# Print the results
+cat("Mean Absolute Error (MAE):", mae_2, "\n")
+cat("Mean Squared Error (MSE):", mse_2, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse_2, "\n")
+```
+
+```{r}
+# Plot predicted vs true values
+ggplot(test_data_2, aes(x = Cluster.2, y = predictions)) +
+  geom_point(color = 'blue', alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = 'red', linetype = "dashed") +
+  labs(title = "Predicted vs True Values",
+       x = "True Values",
+       y = "Predicted Values") +
+  theme_minimal()
+```
+
+## Linear Regression Model Summary
+
+```{r}
+summary(linear_model_2)
+```
+
+
+# Cluster 3
+
+## Linear Regression Model for Cluster 3
+
+```{r}
+# Split the data into training and testing sets
+train_index_3 <- 1:floor(0.8 * nrow(cluster3_trans))
+train_data_3 <- cluster3_trans[train_index_3, ]
+test_data_3 <- cluster3_trans[-train_index_3, ]
+
+# Fit the linear regression model
+linear_model_3 <- lm(Cluster.3 ~ Cluster.3_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_3)
+```
+
+## Performance of Predictions
+
+```{r}
+# Make predictions on the testing set
+test_data_3$predictions <- predict(linear_model_3, newdata = test_data_3)
+
+# Calculate prediction error metrics
+mae_3 <- mean(abs(test_data_3$Cluster.3 - test_data_3$predictions))
+mse_3 <- mean((test_data_3$Cluster.3 - test_data_3$predictions)^2)
+rmse_3 <- sqrt(mse_3)
+
+# Print the results
+cat("Mean Absolute Error (MAE):", mae_3, "\n")
+cat("Mean Squared Error (MSE):", mse_3, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse_3, "\n")
+```
+
+```{r}
+# Plot predicted vs true values
+ggplot(test_data_3, aes(x = Cluster.3, y = predictions)) +
+  geom_point(color = 'blue', alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = 'red', linetype = "dashed") +
+  labs(title = "Predicted vs True Values",
+       x = "True Values",
+       y = "Predicted Values") +
+  theme_minimal()
+```
+
+## Linear Regression Model Summary
+
+```{r}
+summary(linear_model_3)
+```
+
+# Cluster 4
+
+## Linear Regression Model for Cluster 4
+
+```{r}
+# Split the data into training and testing sets
+train_index_4 <- 1:floor(0.8 * nrow(cluster4_trans))
+train_data_4 <- cluster4_trans[train_index_4, ]
+test_data_4 <- cluster4_trans[-train_index_4, ]
+
+# Fit the linear regression model
+linear_model_4 <- lm(Cluster.4 ~ Cluster.4_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_4)
+
+# Make predictions on the testing set
+test_data_4$predictions <- predict(linear_model_4, newdata = test_data_4)
+
+```
+
+## Performance of Predictions
+
+```{r}
+# Calculate prediction error metrics
+mae_4 <- mean(abs(test_data_4$Cluster.4 - test_data_4$predictions))
+mse_4 <- mean((test_data_4$Cluster.4 - test_data_4$predictions)^2)
+rmse_4 <- sqrt(mse_4)
+
+# Print the results
+cat("Mean Absolute Error (MAE):", mae_4, "\n")
+cat("Mean Squared Error (MSE):", mse_4, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse_4, "\n")
+```
+
+
+```{r}
+# Plot predicted vs true values
+ggplot(test_data_4, aes(x = Cluster.4, y = predictions)) +
+  geom_point(color = 'blue', alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = 'red', linetype = "dashed") +
+  labs(title = "Predicted vs True Values",
+       x = "True Values",
+       y = "Predicted Values") +
+  theme_minimal()
+```
+
+## Linear Regression Model Summary
+
+```{r}
+summary(linear_model_4)
+```
+
+
+# Cluster 5
+
+## Linear Regression Model for Cluster 5
+
+```{r}
+# Split the data into training and testing sets
+train_index_5 <- 1:floor(0.8 * nrow(cluster5_trans))
+train_data_5 <- cluster5_trans[train_index_5, ]
+test_data_5 <- cluster5_trans[-train_index_5, ]
+
+# Fit the linear regression model
+linear_model_5 <- lm(Cluster.5 ~ Cluster.5_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_5)
+```
+
+## Performance of Predictions
+
+```{r}
+# Make predictions on the testing set
+test_data_5$predictions <- predict(linear_model_5, newdata = test_data_5)
+
+# Calculate prediction error metrics
+mae_5 <- mean(abs(test_data_5$Cluster.5 - test_data_5$predictions))
+mse_5 <- mean((test_data_5$Cluster.5 - test_data_5$predictions)^2)
+rmse_5 <- sqrt(mse_5)
+
+# Print the results
+cat("Mean Absolute Error (MAE):", mae_5, "\n")
+cat("Mean Squared Error (MSE):", mse_5, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse_5, "\n")
+```
+
+
+```{r}
+# Plot predicted vs true values
+ggplot(test_data_5, aes(x = Cluster.5, y = predictions)) +
+  geom_point(color = 'blue', alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = 'red', linetype = "dashed") +
+  labs(title = "Predicted vs True Values",
+       x = "True Values",
+       y = "Predicted Values") +
+  theme_minimal()
+```
+
+## Linear Regression Model Summary
+
+```{r}
+summary(linear_model_5)
+```
+
+# Cluster 6
+
+## Linear Regression Model for Cluster 6
+
+```{r}
+# Split the data into training and testing sets
+train_index_6 <- 1:floor(0.8 * nrow(cluster6_trans))
+train_data_6 <- cluster6_trans[train_index_6, ]
+test_data_6 <- cluster6_trans[-train_index_6, ]
+
+# Fit the linear regression model
+linear_model_6 <- lm(Cluster.6 ~ Cluster.6_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_6)
+```
+
+## Performance of Predictions
+
+```{r}
+# Make predictions on the testing set
+test_data_6$predictions <- predict(linear_model_6, newdata = test_data_6)
+
+# Calculate prediction error metrics
+mae_6 <- mean(abs(test_data_6$Cluster.6 - test_data_6$predictions))
+mse_6 <- mean((test_data_6$Cluster.6 - test_data_6$predictions)^2)
+rmse_6 <- sqrt(mse_6)
+
+# Print the results
+cat("Mean Absolute Error (MAE):", mae_6, "\n")
+cat("Mean Squared Error (MSE):", mse_6, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse_6, "\n")
+```
+
+```{r}
+# Plot predicted vs true values
+ggplot(test_data_6, aes(x = Cluster.6, y = predictions)) +
+  geom_point(color = 'blue', alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = 'red', linetype = "dashed") +
+  labs(title = "Predicted vs True Values",
+       x = "True Values",
+       y = "Predicted Values") +
+  theme_minimal()
+```
+
+## Linear Regression Model Summary
+
+```{r}
+summary(linear_model_6)
+```
