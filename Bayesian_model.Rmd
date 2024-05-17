@@ -93,25 +93,18 @@ gelman.plot(posterior_sample)
 ```
 
 
---------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------
 
 For subset of cluster 1:
 
 ```{r}
 cluster1_data <- aggregated_data[, -c(2,3,4,5,6)]
 
-num_rows <- nrow(cluster1_data)
-
-# Take a random sample of 3000 rows from cluster1_data
-set.seed(123)  # Setting seed for reproducibility
-sample_indices <- sample(num_rows, 10000)
-sampled_data <- cluster1_data[sample_indices, ]
-
-y <- sampled_data$Cluster.1 
-x1 <- sampled_data$toy        # time of year
-x2 <- sampled_data$weekend    # weekend
-x3 <- sampled_data$temp       # temperature
-x4 <- sampled_data$tod        # time of day
+y <- cluster1_data$Cluster.1 
+x1 <- cluster1_data$toy        # time of year
+x2 <- cluster1_data$weekend    # weekend
+x3 <- cluster1_data$temp       # temperature
+x4 <- cluster1_data$tod        # time of day
 ```
 
 
@@ -172,6 +165,51 @@ posterior_sample <- coda.samples(model,
 ```{r}
 summary(posterior_sample)
 ```
+
+```{r}
+stat <- as.vector(unlist(summary(posterior_sample)[1])[1:10])
+mu <- vector(length = length(y))
+mu[1] <- y[1]
+
+for (t in 2:length(y)) {
+  mu[t] <- stat[1] + stat[2] * y[t-1] +                                                # intercept and y[t-1]
+             stat[3] * sin(x1[t]) + stat[4] * cos(x1[t]) +                               # time of year x1
+             stat[5] * x2[t] +                                                         # weekend x2
+             stat[6] * x3[t] +                                                         # temperature x3 
+             stat[7] * x4[t] + stat[8] * x4[t]^2 + stat[9] * x4[t]^3 + stat[10] * x4[t]^4     # time of day x4                  
+}
+
+```
+
+
+```{r}
+# Create a time variable
+t <- 1:length(y)
+
+# Create a data frame
+data <- data.frame(
+  t = t,
+  y = y,
+  mu = mu
+)
+
+# Load ggplot2
+library(ggplot2)
+
+# Create the plot
+ggplot(data, aes(x = t)) +
+  geom_line(aes(y = y, color = "Actual")) +
+  geom_line(aes(y = mu, color = "Fitted")) +
+  labs(title = "Actual vs Fitted Values Over Time",
+       x = "Time (t)",
+       y = "Values",
+       color = "Legend") +
+  theme_minimal()
+
+```
+
+
+
 
 ```{r}
 gelman.diag(posterior_sample)
