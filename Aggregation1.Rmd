@@ -112,8 +112,6 @@ mean_by_cluster <- df_t %>%
 
 mean_by_cluster <- as.data.frame(mean_by_cluster[,-1])
 rownames(mean_by_cluster) <- c("Cluster 1","Cluster 2","Cluster 3","Cluster 4","Cluster 5")
-# View the result
-print(mean_by_cluster)
 ```
 
 ```{r}
@@ -131,4 +129,10 @@ mean_by_cluster <- rbind(mean_by_cluster,df0)
 # Save as CSV file
 write.csv(mean_by_cluster, file = "AggregatedData.csv")
 ```
+
+```{r}
+
+```
+
+
 
