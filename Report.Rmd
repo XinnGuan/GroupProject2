@@ -16,20 +16,33 @@ library(ggplot2)
 
 # Modeling Household Electricity Demand
 
+## Introduction
 
 
 
 ## Explanatory Data Analysis
 
-### Load Data
-
+Loading Data:
 ```{r}
 load("Irish.RData")
 ```
 
+The file `Irish` contains three data sets, the data set`Irish$indCons` is the 
+electricity demand for 2671 household, with a resolution of half hour over the 
+time period 2019-12-29 to 2020-12-29.
 ```{r}
 head(Irish$indCons[,1:10])
 ```
+The data set `Irish$extra` contains variables such as `tod` (time of day), 
+`toy` (time of year), `dow` (day of the week), and more.
+```{r}
+head(Irish$extra)
+```
+
+```{r}
+head(Irish$survey)
+```
+
 
 ```{r}
 # Count zeros in each row
@@ -50,7 +63,9 @@ print(16799*2674)
 col_zero_counts <- colSums(Irish$indCons == 0)
 
 # Histogram of columns with more than 100 zeros
-hist(col_zero_counts[col_zero_counts > 100], main="Histogram of Households with More Than 100 Zero Usage", xlab= "Zero Counts per Household")
+hist(col_zero_counts[col_zero_counts > 100], 
+     main="Histogram of Households with More Than 100 Zero Usage", 
+     xlab= "Zero Counts per Household")
 ```
 
 ```{r}
@@ -68,18 +83,11 @@ df0$time_mean_dem <- rowSums(Irish$indCons)/ncol(Irish$indCons)
 ```
 
 
-```{r}
-head(Irish$extra)
-```
 
 ```{r}
 df <- cbind(df0[,"time_mean_dem"],Irish$extra)
 colnames(df) <- c("time_mean_demand", colnames(Irish$extra))
 ```
-
-
-
-
 
 
 
@@ -90,19 +98,17 @@ head(df)
 ## Visualizing main characteristics
 
 ```{r}
-# Load necessary libraries
-library(ggplot2)
-library(dplyr)
-
 # Basic summary of each column
 summary(df)
 #`holy` is all FALSE
 
 # Time series plot of time_mean_demand
-ggplot(df, aes(x=dateTime, y=time_mean_demand)) + geom_line() + ggtitle("Time Series of Mean Demand")
+ggplot(df, aes(x=dateTime, y=time_mean_demand)) + geom_line() + 
+  ggtitle("Time Series of Mean Demand")
 
 # Boxplots to check variation of time_mean_demand across days of the week
-ggplot(df, aes(x=dow, y=time_mean_demand)) + geom_boxplot() + ggtitle("Demand Variation by Day of Week")
+ggplot(df, aes(x=dow, y=time_mean_demand)) + geom_boxplot() + 
+  ggtitle("Demand Variation by Day of Week")
 
 ```
 
@@ -111,14 +117,18 @@ ggplot(df, aes(x=dow, y=time_mean_demand)) + geom_boxplot() + ggtitle("Demand Va
 ggplot(df, aes(x=temp, y=time_mean_demand)) +
     geom_point(alpha=0.5) +
     geom_smooth(method="lm", se=FALSE, color="blue") +
-    labs(x="Temperature", y="Mean Demand", title="Relationship Between Temperature and Mean Demand")
+    labs(x="Temperature", y="Mean Demand", 
+         title="Relationship Between Temperature and Mean Demand")
 ```
+
+
 ```{r}
 # Line plot for time_mean_demand across different times of day
 ggplot(df, aes(x=tod, y=time_mean_demand, group=1)) +
     geom_point(alpha=0.5) +
     geom_smooth(color="blue") +
-    labs(x="Time of Day", y="Sum Demand", title="Mean Demand Across Different Times of Day")
+    labs(x="Time of Day", y="Sum Demand", 
+         title="Mean Demand Across Different Times of Day")
 
 ```
 
@@ -146,7 +156,8 @@ df$time <- format(Irish$extra$dateTime, "%H:%M:%S")
 
 # Gather the data into long format
 df_long <- df %>%
-  pivot_longer(cols = -c(date, time), names_to = "household_id", values_to = "demand")
+  pivot_longer(cols = -c(date, time), names_to = "household_id", 
+               values_to = "demand")
 
 # Calculate the average demand over the year for each 30-minute interval
 avg_demand <- df_long %>%
@@ -177,7 +188,8 @@ cosine_distances <- compute_cosine_similarity_matrix(avg_demand_wide)
 hc <- hclust(as.dist(cosine_distances), method = "ward.D2")
 
 # Plot the dendrogram
-plot(hc, labels = FALSE, main = "Dendrogram of Households", xlab = "Households", ylab = "Height")
+plot(hc, labels = FALSE, main = "Dendrogram of Households", xlab = "Households", 
+     ylab = "Height")
 abline(h=1,col="red")
 ```
 
@@ -195,7 +207,8 @@ print(cluster_summary)
 
 # Reshape avg_demand back to long format
 avg_demand_long <- avg_demand_wide %>%
-  pivot_longer(cols = -c(household_id, cluster), names_to = "time", values_to = "daily_demand")
+  pivot_longer(cols = -c(household_id, cluster), names_to = "time", 
+               values_to = "daily_demand")
 
 
 # Join cluster information back to the original dataframe
@@ -219,20 +232,23 @@ df_t <- as.data.frame(t(df[,-c(ncol(df)-1,ncol(df))]))
 # Step 2: Add the clusters as a new column to the transposed data frame
 df_t$cluster <- clusters
 
-# Step 3: Group by cluster and calculate the mean for each row within each cluster
+# Step 3: Group by cluster and calculate the mean for each row within each 
+#cluster
 mean_by_cluster <- df_t %>%
   group_by(cluster) %>%
   summarise(across(everything(), mean, na.rm = TRUE))
 
 mean_by_cluster <- as.data.frame(mean_by_cluster[,-1])
-rownames(mean_by_cluster) <- c("Cluster 1","Cluster 2","Cluster 3","Cluster 4","Cluster 5","Cluster 6")
+rownames(mean_by_cluster) <- c("Cluster 1","Cluster 2","Cluster 3","Cluster 4",
+                               "Cluster 5","Cluster 6")
 # View the result
 print(mean_by_cluster)
 ```
 
 ```{r}
 df0 <- Irish$extra
-df0 <- df0 %>% mutate(dow = ifelse(dow %in% c("Sat", "Sun"), "True", "False")) %>% select(-c(holy,time,dateTime))%>%rename(weekend = dow)
+df0 <- df0 %>% mutate(dow = ifelse(dow %in% c("Sat", "Sun"), "True", "False")) 
+%>% select(-c(holy,time,dateTime))%>%rename(weekend = dow)
 df0 <-t(df0)
 ```
 
@@ -249,7 +265,7 @@ mean_by_cluster <- mean_by_cluster %>%
 
 ```{r}
 # Save as CSV file
-write.csv(mean_by_cluster, file = "AggregatedData1.csv", row.names = FALSE)
+#write.csv(mean_by_cluster, file = "AggregatedData1.csv", row.names = FALSE)
 ```
 
 
@@ -260,14 +276,15 @@ avg_demand_wide$cluster <- clusters
 
 
 ```{r}
-write.csv(avg_demand_wide, file = "cluster_data.csv", row.names = FALSE)
+#write.csv(avg_demand_wide, file = "cluster_data.csv", row.names = FALSE)
 ```
 
 
 
 ```{r}
 # Identify the time columns by excluding non-time columns
-time_columns <- grep("^\\d{2}:\\d{2}:\\d{2}$", colnames(avg_demand_wide), value = TRUE)
+time_columns <- grep("^\\d{2}:\\d{2}:\\d{2}$", colnames(avg_demand_wide), 
+                     value = TRUE)
 
 # Add rowid to avg_demand_wide for sampling
 avg_demand_wide <- avg_demand_wide %>%
@@ -299,11 +316,13 @@ for (cl in unique(avg_demand_wide$cluster)) {
     geom_line(data = mean_demand %>% filter(cluster == cl), 
               aes(x = Time, y = mean_demand, color = "Mean Demand"), size = 1) +
     geom_line(data = sample_data, 
-              aes(x = Time, y = Demand, group = rowid, color = as.factor(rowid)), alpha = 0.3) +  # Adjusted transparency
+              aes(x = Time, y = Demand, group = rowid, 
+                  color = as.factor(rowid)), alpha = 0.3) + 
     labs(title = paste("Cluster", cl),
          x = "Time",
          y = "Demand") +
-    scale_color_manual(values = c("Mean Demand" = "red", setNames(rainbow(10), sampled_houses))) +
+    scale_color_manual(values = c("Mean Demand" = "red", setNames(rainbow(10), 
+                                                            sampled_houses))) +
     theme_minimal()
   
   print(p)
