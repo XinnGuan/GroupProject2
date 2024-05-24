@@ -1,0 +1,23 @@
+---
+title: "Report"
+author: "Xin Guan, Vera Hudak, Yuqi Zhang"
+date: "2024-05-24"
+output: html_document
+---
+# Modeling Household Electricity Demand
+
+
+
+
+## Explanatory Data Analysis
+
+### Load Data
+
+```{r}
+library(electBook)
+load("Irish.RData")
+```
+
+```{r}
+head(Irish$indCons[,1:10])
+```
