@@ -331,24 +331,1106 @@ for (cl in unique(avg_demand_wide$cluster)) {
 ```
 
 
+## Bayesian Model
+
+Load aggregated dataset:
+
+```{r}
+aggregated_data <- read.csv("AggregatedData1.csv")
+```
+
+First, we filter for cluster 1 data only from the aggregated dataset, and use the first 80% of it as training data, and the last 20 as the testing data. Note that we do this and not use random partitioning because that would disturb the time series nature of the data. 
+
+```{r}
+# use cluster 1 from dataset
+cluster1_data <- aggregated_data[, -c(2,3,4,5,6)]
+
+# take first 80% of the data
+num_rows <- nrow(cluster1_data)
+num_rows_80_percent <- floor(0.8 * num_rows)
+cluster1_data_train <- cluster1_data[1:num_rows_80_percent, ]
+cluster1_data_test <- cluster1_data[(num_rows_80_percent + 1):num_rows, ]
+
+# define the dependent variable and teh explanatory variables
+y <- cluster1_data_train$Cluster.1 
+x4 <- cluster1_data_train$toy                    # time of year
+x3 <- as.integer(cluster1_data_train$weekend)    # weekend
+x1 <- cluster1_data_train$temp                   # temperature
+x2 <- cluster1_data_train$tod                    # time of day
+```
+
+Next, we define our model. We assume that 
+
+$$
+    y_t \sim Normal (\mu_t, \sigma^2),
+$$
+where
+
+$$
+\mu_t = \beta_0 + \alpha y_{t-1} + \beta_1 x_{1,t} + \beta_{2}x_{2,t} + \beta_{3}x_{2,t}^2 + \beta_{4}x_{2,t}^3 + \beta_{5}x_{2,t}^4 + \beta_6 x_{3,t} + \beta_{7}\sin(x_{4,t}) + \beta_{8}\cos(x_{4,t}).
+$$
+
+We need to set priors on $\alpha$, $\beta_i$ for all $i$ and since JAGS works with precision instead of variance in the normal distribution, also on $\tau = 1 / \sigma^2$. We use the following priors on  $\alpha$, $\beta_i$:
+
+$$
+   \beta_i \sim Normal (0, 0.01) \text{ for all } i \in \{0, 8\} \\
+    \alpha \sim Normal (0, 0.01),
+$$
+
+where 0.01 is the precision of the parameters (not the variance). As for $\tau$, we use a distribution that is often used in literature as a non informative prior on precision:
+
+$$
+    \tau \sim Gamma (0.01, 0.01).
+$$
+
+We write the model described above as a string that we feed to JAGS with the data to fit our model. 
+
+```{r}
+library(rjags)
+```
+
+```{r}
+model_string2 <- "model {
+  # Priors for the coefficients
+  beta0 ~ dnorm(0, 0.01)
+  beta1 ~ dnorm(0, 0.01)
+  beta2 ~ dnorm(0, 0.01)
+  beta3 ~ dnorm(0, 0.01)
+  beta4 ~ dnorm(0, 0.01)
+  beta5 ~ dnorm(0, 0.01)
+  beta6 ~ dnorm(0, 0.01)
+  beta7 ~ dnorm(0, 0.01)
+  beta8 ~ dnorm(0, 0.01)
+  alpha ~ dnorm(0, 0.01)
+  
+  # Prior for the precision (inverse of variance)
+  tau ~ dgamma(0.01, 0.01)
+  sigma <- 1 / sqrt(tau)
+  
+  # Initial value for y[1]
+  y[1] ~ dnorm(0, 0.01)
+  
+  # Likelihood
+  for (t in 2:N) {
+    y[t] ~ dnorm(mu[t], tau)
+    mu[t] <- beta0 + alpha * y[t-1] +                                                # intercept and y[t-1]
+             beta1 * x1[t] +                                                         # temp x1
+             beta2 * x2[t] + beta3 * x2[t]^2 + beta4 * x2[t]^3 + beta5 * x2[t]^4 +   # time of day x2
+             beta6 * x3[t] +                                                         # weekend x3 
+             beta7 * sin(x4[t]) + beta8 * cos(x4[t])                                 # time of year x4
+             }
+  
+}
+
+"
+```
+
+We define a function that sets a seed for the initial values for the chains, for reproducibility. 
+
+```{r}
+# Define the initial values function
+inits <- function(chain) {
+  set.seed(12 + chain) # Different seed for each chain
+  list(
+    .RNG.name ="base::Mersenne-Twister",
+    .RNG.seed = 12 + chain
+  )
+}
+```
+
+We fit the model above using 3 chains, a burn-in of 11000 and simulate a posterior sample of size 15000.
+
+```{r}
+set.seed(12)
+
+# Data for the model
+datalist <- list(N = length(y), x1 = x1, x2 = x2, x3 = x3, x4 = x4, y = y)
+
+# Compile and run with 3 chains, burn-in of 9000 and total sample size of 13000
+model <- jags.model(
+  file = textConnection(model_string2),
+  data = datalist,
+  inits = list(inits(4), inits(5), inits(3)), # Seed for initial values for each chain
+  n.chains = 3
+)
+update(model, n.iter = 11000)
+
+Nrep = 15000
+
+posterior_sample <- coda.samples(
+  model,
+  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5", "beta6", "beta7", "beta8", "alpha"),
+  n.iter = Nrep
+)
+```
+
+To check for convergence of chains, we use the Gelman–Rubin convergence diagnostic. The Gelman-Rubin diagnostic compares the variance between multiple chains (inter-chain variance) to the variance within each chain (intra-chain variance). The basic idea is to run multiple MCMC chains and then evaluate whether these chains have converged to the same distribution. Mathematically, it can be expressed as:
+
+$$
+\hat{R}=\frac{\frac{L-1}{L}W + \frac{1}{L}B}{W}
+$$
+
+where $L$ is the total simulated sample size minus the burn in, $B$ is between chain variance and $W$ is the average within-chain variance. We want the $\hat{R}$ (or psrf) values to be close to 1, generally taking values under 1.2 or more strictly, under 1.1 to indicate convergence. We print the Gelman–Rubin convergence diagnostic below for each variable. 
+
+```{r}
+gelman.diag(posterior_sample)
+```
+
+We can see that each individual point estimate, as well as the multivariate psrf is under 1.2, so this confirms convergence. 
+
+We see the summary of the posterior samples below. 
+
+```{r}
+summary(posterior_sample)
+```
+
+Next, we take the posterior means of the regression parameters as estimated by the model and calculate $\hat{\mu_t}$, which is the mean of the distribution of $y_t$ at time $t$, as estimated by our model. We can then plot the means against the true values of $y_t$ to see how well the model fits the data. 
+
+```{r}
+stat <- as.vector(unlist(summary(posterior_sample)[1])[1:11])
+mu <- vector(length = length(y))
+mu[1] <- y[1]
+
+# Compare fitted mu with true values of y_t 
+for (t in 2:length(y)) {
+  mu[t] <- stat[2] + stat[1] * y[t-1] +                                                
+             stat[3] * x1[t] +                                                         
+             stat[4] * x2[t] + stat[5] * x2[t]^2 + stat[6] * x2[t]^3 + stat[7] * x2[t]^4 +   
+             stat[8] * x3[t] +                                                        
+             stat[9] * sin(x4[t]) + stat[10] * cos(x4[t])                     
+}
+
+# Create a time variable
+t <- 1:length(y)
+
+# Create a data frame
+data <- data.frame(
+  t = t,
+  y = y,
+  mu = mu
+)
+
+# Load ggplot2
+library(ggplot2)
+
+# Create the scatter plot
+ggplot(data, aes(x = mu, y = y)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Actual vs Fitted Values",
+       x = "Fitted Values (mu)",
+       y = "Actual Values (y)") +
+  theme_minimal()
+```
+
+We can see that the model fits the data well, as the means agree with the true values.
+
+Now we want to find the predicted values of y for the test set. This allows us to assess the model performance using performance metrics like MSE.
+
+```{r}
+set.seed(123)
+# Extract the test data vectors
+x1_test <- cluster1_data_test$temp
+x2_test <- cluster1_data_test$tod
+x3_test <- as.integer(cluster1_data_test$weekend)
+x4_test <- cluster1_data_test$toy
+y_test <- cluster1_data_test$Cluster.1
+N_test <- length(y_test)
+
+# Initialize a vector to store the predicted values
+predicted_y <- numeric(N_test)
+
+# Sigma is 1/sqrt(tau), where tau is the precision
+sigma <- 1 / sqrt(stat[11])
+
+# Make predictions using the posterior samples
+mu_test <- numeric(N_test)
+mu_test[1] <- y_test[1]
+predicted_y[1] <- y_test[1]  # Initialize with the first observed value
+
+for (t in 2:N_test) {
+  
+    mu_test[t] <- stat[2] + stat[1] * predicted_y[t-1] +                                                
+             stat[3] * x1_test[t] +                                                         
+             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7] * x2_test[t]^4 +   
+             stat[8] * x3_test[t] +                                                        
+             stat[9] * sin(x4_test[t]) + stat[10] * cos(x4_test[t]) 
+    
+    predicted_y[t] <- rnorm(1, mean = mu_test[t], sd = sigma)
+}
+
+```
+
+We plot the predicted vs. fitted values:
+
+```{r}
+# Create a data frame
+t <- 1:length(y_test)
+
+data_test <- data.frame(
+  t = t,
+  y = y_test,
+  predicted_val = predicted_y
+)
+
+# Create the scatter plot
+ggplot(data_test, aes(x = predicted_val, y = y)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Actual vs Fitted Values",
+       x = "Predicted y",
+       y = "y") +
+  theme_minimal()
+```
+
+Calculate MSE:
+
+```{r}
+# Calculate Mean Squared Error (MSE)
+mse <- mean((predicted_y - y_test)^2)
+
+# Print the results
+cat("MSE:", mse, "\n")
+```
+
+Repeat for cluster 2:
+
+```{r}
+# use cluster 2 from dataset
+cluster2_data <- aggregated_data[, -c(1,3,4,5,6)]
+
+# take first 80% of the data
+num_rows <- nrow(cluster2_data)
+num_rows_80_percent <- floor(0.8 * num_rows)
+cluster2_data_train <- cluster2_data[1:num_rows_80_percent, ]
+cluster2_data_test <- cluster2_data[(num_rows_80_percent + 1):num_rows, ]
+
+# define the dependent variable and teh explanatory variables
+y <- cluster2_data_train$Cluster.2 
+x4 <- cluster2_data_train$toy        # time of year
+x3 <- cluster2_data_train$weekend    # weekend
+x1 <- cluster2_data_train$temp       # temperature
+x2 <- cluster2_data_train$tod        # time of day
+```
+
+Fit model with burn in 11000 and posterior sample size of 15000. 
+
+```{r}
+set.seed(12)
+
+# Data for the model
+datalist <- list(N = length(y), x1 = x1, x2 = x2, x3 = x3, x4 = x4, y = y)
+
+# Compile and run with 3 chains, burn-in of 9000 and total sample size of 13000
+model <- jags.model(
+  file = textConnection(model_string2),
+  data = datalist,
+  inits = list(inits(4), inits(5), inits(3)), # Seed for initial values for each chain
+  n.chains = 3
+)
+update(model, n.iter = 11000)
+
+Nrep = 15000
+
+posterior_sample2 <- coda.samples(
+  model,
+  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5", "beta6", "beta7", "beta8", "alpha"),
+  n.iter = Nrep
+)
+```
 
 
+Check convergence: 
+
+```{r}
+gelman.diag(posterior_sample2)
+```
+
+We can see that each individual point estimate, as well as the multivariate psrf is under 1.2, so this confirms convergence. 
+
+We print the summary of the posterior samples below. 
+
+```{r}
+summary(posterior_sample2)
+```
+
+Next, we take the posterior means of the regression parameters as estimated by the model and calculate $\hat{\mu_t}$, which is the mean of the distribution of $y_t$ at time $t$, as estimated by our model. We can then plot the means against the true values of $y_t$ to see how well the model fits the data. 
+
+```{r}
+stat <- as.vector(unlist(summary(posterior_sample2)[1])[1:11])
+mu <- vector(length = length(y))
+mu[1] <- y[1]
+
+# Compare fitted mu with true values of y_t 
+for (t in 2:length(y)) {
+  mu[t] <- stat[2] + stat[1] * y[t-1] +                                                
+             stat[3] * x1[t] +                                                         
+             stat[4] * x2[t] + stat[5] * x2[t]^2 + stat[6] * x2[t]^3 + stat[7] * x2[t]^4 +   
+             stat[8] * x3[t] +                                                        
+             stat[9] * sin(x4[t]) + stat[10] * cos(x4[t])                     
+}
+
+# Create a time variable
+t <- 1:length(y)
+
+# Create a data frame
+data <- data.frame(
+  t = t,
+  y = y,
+  mu = mu
+)
+
+# Create the scatter plot
+ggplot(data, aes(x = mu, y = y)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Actual vs Fitted Values",
+       x = "Fitted Values (mu)",
+       y = "Actual Values (y)") +
+  theme_minimal()
+```
+
+We can see that the model fits the data well, as the means agree with the true values.
+
+Now we want to find the predicted values of y for the test set. This allows us to assess the model performance using performance metrics like MSE.
+
+```{r}
+set.seed(12)
+# Extract the test data vectors
+x1_test <- cluster2_data_test$temp
+x2_test <- cluster2_data_test$tod
+x3_test <- as.integer(cluster2_data_test$weekend)
+x4_test <- cluster2_data_test$toy
+y_test <- cluster2_data_test$Cluster.2
+N_test <- length(y_test)
+
+# Initialize a vector to store the predicted values
+predicted_y <- numeric(N_test)
+
+# Sigma is 1/sqrt(tau), where tau is the precision
+sigma <- 1 / sqrt(stat[11])
+
+# Make predictions using the posterior samples
+mu_test <- numeric(N_test)
+mu_test[1] <- y_test[1]
+predicted_y[1] <- y_test[1]  # Initialize with the first observed value
+
+for (t in 2:N_test) {
+  
+    mu_test[t] <- stat[2] + stat[1] * predicted_y[t-1] +                                                
+             stat[3] * x1_test[t] +                                                         
+             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7] * x2_test[t]^4 +   
+             stat[8] * x3_test[t] +                                                        
+             stat[9] * sin(x4_test[t]) + stat[10] * cos(x4_test[t]) 
+    
+    predicted_y[t] <- rnorm(1, mean = mu_test[t], sd = sigma)
+}
+
+```
+
+We plot the predicted vs. fitted values:
+
+```{r}
+# Create a data frame
+t <- 1:length(y_test)
+
+data_test <- data.frame(
+  t = t,
+  y = y_test,
+  predicted_val = predicted_y
+)
+
+# Create the scatter plot
+ggplot(data_test, aes(x = predicted_val, y = y)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Actual vs Fitted Values",
+       x = "Predicted y",
+       y = "y") +
+  theme_minimal()
+```
+
+Calculate MSE:
+
+```{r}
+# Calculate Mean Squared Error (MSE)
+mse <- mean((predicted_y - y_test)^2)
+
+# Print the results
+cat("MSE:", mse, "\n")
+```
 
 
+Repeat for cluster 3:
+
+```{r}
+# use cluster 3 from dataset
+cluster3_data <- aggregated_data[, -c(1,2,4,5,6)]
+
+# take first 80% of the data
+num_rows <- nrow(cluster3_data)
+num_rows_80_percent <- floor(0.8 * num_rows)
+cluster3_data_train <- cluster3_data[1:num_rows_80_percent, ]
+cluster3_data_test <- cluster3_data[(num_rows_80_percent + 1):num_rows, ]
+
+# define the dependent variable and the explanatory variables
+y <- cluster3_data_train$Cluster.3 
+x4 <- cluster3_data_train$toy        # time of year
+x3 <- cluster3_data_train$weekend    # weekend
+x1 <- cluster3_data_train$temp       # temperature
+x2 <- cluster3_data_train$tod        # time of day
+```
+
+Fit model with burn in 12000 and posterior sample size of 16000. 
+
+```{r}
+set.seed(12)
+
+# Data for the model
+datalist <- list(N = length(y), x1 = x1, x2 = x2, x3 = x3, x4 = x4, y = y)
+
+# Compile and run with 3 chains, burn-in of 9000 and total sample size of 13000
+model <- jags.model(
+  file = textConnection(model_string2),
+  data = datalist,
+  inits = list(inits(4), inits(5), inits(3)), # Seed for initial values for each chain
+  n.chains = 3
+)
+update(model, n.iter = 12000)
+
+Nrep = 16000
+
+posterior_sample3 <- coda.samples(
+  model,
+  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5", "beta6", "beta7", "beta8", "alpha"),
+  n.iter = Nrep
+)
+```
+
+Check convergence: 
+
+```{r}
+gelman.diag(posterior_sample3)
+```
+
+We can see that each individual point estimate, as well as the multivariate psrf is under 1.2, so this confirms convergence. 
+
+We print the summary of the posterior samples below. 
+
+```{r}
+summary(posterior_sample3)
+```
+
+Next, we take the posterior means of the regression parameters as estimated by the model and calculate $\hat{\mu_t}$, which is the mean of the distribution of $y_t$ at time $t$, as estimated by our model. We can then plot the means against the true values of $y_t$ to see how well the model fits the data. 
+
+```{r}
+stat <- as.vector(unlist(summary(posterior_sample3)[1])[1:11])
+mu <- vector(length = length(y))
+mu[1] <- y[1]
+
+# Compare fitted mu with true values of y_t 
+for (t in 2:length(y)) {
+  mu[t] <- stat[2] + stat[1] * y[t-1] +                                                
+             stat[3] * x1[t] +                                                         
+             stat[4] * x2[t] + stat[5] * x2[t]^2 + stat[6] * x2[t]^3 + stat[7] * x2[t]^4 +   
+             stat[8] * x3[t] +                                                        
+             stat[9] * sin(x4[t]) + stat[10] * cos(x4[t])                     
+}
+
+# Create a time variable
+t <- 1:length(y)
+
+# Create a data frame
+data <- data.frame(
+  t = t,
+  y = y,
+  mu = mu
+)
+
+# Create the scatter plot
+ggplot(data, aes(x = mu, y = y)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Actual vs Fitted Values",
+       x = "Fitted Values (mu)",
+       y = "Actual Values (y)") +
+  theme_minimal()
+```
+
+We can see that the model fits the data well, as the means agree with the true values.
+
+Now we want to find the predicted values of y for the test set. This allows us to assess the model performance using performance metrics like MSE.
+
+```{r}
+set.seed(12)
+# Extract the test data vectors
+x1_test <- cluster3_data_test$temp
+x2_test <- cluster3_data_test$tod
+x3_test <- as.integer(cluster3_data_test$weekend)
+x4_test <- cluster3_data_test$toy
+y_test <- cluster3_data_test$Cluster.3
+N_test <- length(y_test)
+
+# Initialize a vector to store the predicted values
+predicted_y <- numeric(N_test)
+
+# Sigma is 1/sqrt(tau), where tau is the precision
+sigma <- 1 / sqrt(stat[11])
+
+# Make predictions using the posterior samples
+mu_test <- numeric(N_test)
+mu_test[1] <- y_test[1]
+predicted_y[1] <- y_test[1]  # Initialize with the first observed value
+
+for (t in 2:N_test) {
+  
+    mu_test[t] <- stat[2] + stat[1] * predicted_y[t-1] +                                                
+             stat[3] * x1_test[t] +                                                         
+             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7] * x2_test[t]^4 +   
+             stat[8] * x3_test[t] +                                                        
+             stat[9] * sin(x4_test[t]) + stat[10] * cos(x4_test[t]) 
+    
+    predicted_y[t] <- rnorm(1, mean = mu_test[t], sd = sigma)
+}
+
+```
+
+We plot the predicted vs. fitted values:
+
+```{r}
+# Create a data frame
+t <- 1:length(y_test)
+
+data_test <- data.frame(
+  t = t,
+  y = y_test,
+  predicted_val = predicted_y
+)
+
+# Create the scatter plot
+ggplot(data_test, aes(x = predicted_val, y = y)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Actual vs Fitted Values",
+       x = "Predicted y",
+       y = "y") +
+  theme_minimal()
+```
 
 
+Calculate MSE:
+
+```{r}
+# Calculate Mean Squared Error (MSE)
+mse <- mean((predicted_y - y_test)^2)
+
+# Print the results
+cat("MSE:", mse, "\n")
+```
 
 
+Repeat for cluster 4:
 
 
+```{r}
+# use cluster 4 from dataset
+cluster4_data <- aggregated_data[, -c(1,2,3,5,6)]
+
+# take first 80% of the data
+num_rows <- nrow(cluster4_data)
+num_rows_80_percent <- floor(0.8 * num_rows)
+cluster4_data_train <- cluster4_data[1:num_rows_80_percent, ]
+cluster4_data_test <- cluster4_data[(num_rows_80_percent + 1):num_rows, ]
+
+# define the dependent variable and the explanatory variables
+y <- cluster4_data_train$Cluster.4 
+x4 <- cluster4_data_train$toy        # time of year
+x3 <- cluster4_data_train$weekend    # weekend
+x1 <- cluster4_data_train$temp       # temperature
+x2 <- cluster4_data_train$tod        # time of day
+```
+
+Fit model with burn in 11000 and posterior sample size of 15000. 
+
+```{r}
+set.seed(12)
+
+# Data for the model
+datalist <- list(N = length(y), x1 = x1, x2 = x2, x3 = x3, x4 = x4, y = y)
+
+# Compile and run with 3 chains, burn-in of 9000 and total sample size of 13000
+model <- jags.model(
+  file = textConnection(model_string2),
+  data = datalist,
+  inits = list(inits(4), inits(5), inits(3)), # Seed for initial values for each chain
+  n.chains = 3
+)
+update(model, n.iter = 11000)
+
+Nrep = 15000
+
+posterior_sample4 <- coda.samples(
+  model,
+  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5", "beta6", "beta7", "beta8", "alpha"),
+  n.iter = Nrep
+)
+```
+
+Check convergence: 
+
+```{r}
+gelman.diag(posterior_sample4)
+```
+
+We can see that each individual point estimate, as well as the multivariate psrf is under 1.2, so this confirms convergence. 
+
+We print the summary of the posterior samples below. 
+
+```{r}
+summary(posterior_sample4)
+```
+
+Next, we take the posterior means of the regression parameters as estimated by the model and calculate $\hat{\mu_t}$, which is the mean of the distribution of $y_t$ at time $t$, as estimated by our model. We can then plot the means against the true values of $y_t$ to see how well the model fits the data. 
+
+```{r}
+stat <- as.vector(unlist(summary(posterior_sample4)[1])[1:11])
+mu <- vector(length = length(y))
+mu[1] <- y[1]
+
+# Compare fitted mu with true values of y_t 
+for (t in 2:length(y)) {
+  mu[t] <- stat[2] + stat[1] * y[t-1] +                                                
+             stat[3] * x1[t] +                                                         
+             stat[4] * x2[t] + stat[5] * x2[t]^2 + stat[6] * x2[t]^3 + stat[7] * x2[t]^4 +   
+             stat[8] * x3[t] +                                                        
+             stat[9] * sin(x4[t]) + stat[10] * cos(x4[t])                     
+}
+
+# Create a time variable
+t <- 1:length(y)
+
+# Create a data frame
+data <- data.frame(
+  t = t,
+  y = y,
+  mu = mu
+)
+
+# Create the scatter plot
+ggplot(data, aes(x = mu, y = y)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Actual vs Fitted Values",
+       x = "Fitted Values (mu)",
+       y = "Actual Values (y)") +
+  theme_minimal()
+```
+
+We can see that the model fits the data well, as the means agree with the true values.
+
+Now we want to find the predicted values of y for the test set. This allows us to assess the model performance using performance metrics like MSE.
+
+```{r}
+set.seed(12)
+# Extract the test data vectors
+x1_test <- cluster4_data_test$temp
+x2_test <- cluster4_data_test$tod
+x3_test <- as.integer(cluster4_data_test$weekend)
+x4_test <- cluster4_data_test$toy
+y_test <- cluster4_data_test$Cluster.4
+N_test <- length(y_test)
+
+# Initialize a vector to store the predicted values
+predicted_y <- numeric(N_test)
+
+# Sigma is 1/sqrt(tau), where tau is the precision
+sigma <- 1 / sqrt(stat[11])
+
+# Make predictions using the posterior samples
+mu_test <- numeric(N_test)
+mu_test[1] <- y_test[1]
+predicted_y[1] <- y_test[1]  # Initialize with the first observed value
+
+for (t in 2:N_test) {
+  
+    mu_test[t] <- stat[2] + stat[1] * predicted_y[t-1] +                                                
+             stat[3] * x1_test[t] +                                                         
+             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7] * x2_test[t]^4 +   
+             stat[8] * x3_test[t] +                                                        
+             stat[9] * sin(x4_test[t]) + stat[10] * cos(x4_test[t]) 
+    
+    predicted_y[t] <- rnorm(1, mean = mu_test[t], sd = sigma)
+}
+
+```
+
+We plot the predicted vs. fitted values:
+
+```{r}
+# Create a data frame
+t <- 1:length(y_test)
+
+data_test <- data.frame(
+  t = t,
+  y = y_test,
+  predicted_val = predicted_y
+)
+
+# Create the scatter plot
+ggplot(data_test, aes(x = predicted_val, y = y)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Actual vs Fitted Values",
+       x = "Predicted y",
+       y = "y") +
+  theme_minimal()
+```
+
+Calculate MSE:
+
+```{r}
+# Calculate Mean Squared Error (MSE)
+mse <- mean((predicted_y - y_test)^2)
+
+# Print the results
+cat("MSE:", mse, "\n")
+```
 
 
+Repeat for cluster 5:
 
+```{r}
+# use cluster 5 from dataset
+cluster5_data <- aggregated_data[, -c(1,2,3,4,6)]
 
+# take first 80% of the data
+num_rows <- nrow(cluster5_data)
+num_rows_80_percent <- floor(0.8 * num_rows)
+cluster5_data_train <- cluster5_data[1:num_rows_80_percent, ]
+cluster5_data_test <- cluster5_data[(num_rows_80_percent + 1):num_rows, ]
 
+# define the dependent variable and the explanatory variables
+y <- cluster5_data_train$Cluster.5 
+x4 <- cluster5_data_train$toy        # time of year
+x3 <- cluster5_data_train$weekend    # weekend
+x1 <- cluster5_data_train$temp       # temperature
+x2 <- cluster5_data_train$tod        # time of day
+```
 
+Fit model with burn in 12000 and posterior sample size of 16000. 
 
+```{r}
+set.seed(12)
 
+# Data for the model
+datalist <- list(N = length(y), x1 = x1, x2 = x2, x3 = x3, x4 = x4, y = y)
 
+# Compile and run with 3 chains, burn-in of 9000 and total sample size of 13000
+model <- jags.model(
+  file = textConnection(model_string2),
+  data = datalist,
+  inits = list(inits(4), inits(5), inits(3)), # Seed for initial values for each chain
+  n.chains = 3
+)
+update(model, n.iter = 12000)
+
+Nrep = 16000
+
+posterior_sample5 <- coda.samples(
+  model,
+  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5", "beta6", "beta7", "beta8", "alpha"),
+  n.iter = Nrep
+)
+```
+
+Check convergence:  
+
+```{r}
+gelman.diag(posterior_sample5)
+```
+
+In this case, the distributions of the variables $\beta_2, \beta_3, \beta_4$ and $\beta_5$ failed to converge. We tried with different initial values and different burn-in/posterior sample sizes, but this remained the case for all tried values, so we just conclude that for cluster 5, the model failed to converge. However, we can still try and use the posterior means in our model to predict for the test set. 
+
+We print the summary of the posterior samples below. 
+
+```{r}
+summary(posterior_sample5)
+```
+
+Next, we take the posterior means of the regression parameters as estimated by the model and calculate $\hat{\mu_t}$, which is the mean of the distribution of $y_t$ at time $t$, as estimated by our model. We can then plot the means against the true values of $y_t$ to see how well the model fits the data. 
+
+```{r}
+stat <- as.vector(unlist(summary(posterior_sample5)[1])[1:11])
+mu <- vector(length = length(y))
+mu[1] <- y[1]
+
+# Compare fitted mu with true values of y_t 
+for (t in 2:length(y)) {
+  mu[t] <- stat[2] + stat[1] * y[t-1] +                                                
+             stat[3] * x1[t] +                                                         
+             stat[4] * x2[t] + stat[5] * x2[t]^2 + stat[6] * x2[t]^3 + stat[7] * x2[t]^4 +   
+             stat[8] * x3[t] +                                                        
+             stat[9] * sin(x4[t]) + stat[10] * cos(x4[t])                     
+}
+
+# Create a time variable
+t <- 1:length(y)
+
+# Create a data frame
+data <- data.frame(
+  t = t,
+  y = y,
+  mu = mu
+)
+
+# Create the scatter plot
+ggplot(data, aes(x = mu, y = y)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Actual vs Fitted Values",
+       x = "Fitted Values (mu)",
+       y = "Actual Values (y)") +
+  theme_minimal()
+```
+
+We can see that the model fits the data well, as the means agree with the true values.
+
+Now we want to find the predicted values of y for the test set. This allows us to assess the model performance using performance metrics like MSE.
+
+```{r}
+set.seed(12)
+# Extract the test data vectors
+x1_test <- cluster5_data_test$temp
+x2_test <- cluster5_data_test$tod
+x3_test <- as.integer(cluster5_data_test$weekend)
+x4_test <- cluster5_data_test$toy
+y_test <- cluster5_data_test$Cluster.5
+N_test <- length(y_test)
+
+# Initialize a vector to store the predicted values
+predicted_y <- numeric(N_test)
+
+# Sigma is 1/sqrt(tau), where tau is the precision
+sigma <- 1 / sqrt(stat[11])
+
+# Make predictions using the posterior samples
+mu_test <- numeric(N_test)
+mu_test[1] <- y_test[1]
+predicted_y[1] <- y_test[1]  # Initialize with the first observed value
+
+for (t in 2:N_test) {
+  
+    mu_test[t] <- stat[2] + stat[1] * predicted_y[t-1] +                                                
+             stat[3] * x1_test[t] +                                                         
+             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7] * x2_test[t]^4 +   
+             stat[8] * x3_test[t] +                                                        
+             stat[9] * sin(x4_test[t]) + stat[10] * cos(x4_test[t]) 
+    
+    predicted_y[t] <- rnorm(1, mean = mu_test[t], sd = sigma)
+}
+
+```
+
+We plot the predicted vs. fitted values:
+
+```{r}
+# Create a data frame
+t <- 1:length(y_test)
+
+data_test <- data.frame(
+  t = t,
+  y = y_test,
+  predicted_val = predicted_y
+)
+
+# Create the scatter plot
+ggplot(data_test, aes(x = predicted_val, y = y)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Actual vs Fitted Values",
+       x = "Predicted y",
+       y = "y") +
+  theme_minimal()
+```
+
+Calculate MSE:
+
+```{r}
+# Calculate Mean Squared Error (MSE)
+mse <- mean((predicted_y - y_test)^2)
+
+# Print the results
+cat("MSE:", mse, "\n")
+```
+
+So even though convergence failed, the model predicts the test data well. 
+
+Repeat for cluster 6:
+
+```{r}
+# use cluster 6 from dataset
+cluster6_data <- aggregated_data[, -c(1,2,3,4,5)]
+
+# take first 80% of the data
+num_rows <- nrow(cluster6_data)
+num_rows_80_percent <- floor(0.8 * num_rows)
+cluster6_data_train <- cluster6_data[1:num_rows_80_percent, ]
+cluster6_data_test <- cluster6_data[(num_rows_80_percent + 1):num_rows, ]
+
+# define the dependent variable and the explanatory variables
+y <- cluster6_data_train$Cluster.6 
+x4 <- cluster6_data_train$toy        # time of year
+x3 <- cluster6_data_train$weekend    # weekend
+x1 <- cluster6_data_train$temp       # temperature
+x2 <- cluster6_data_train$tod        # time of day
+```
+
+Fit model with burn in 12000 and posterior sample size of 16000. 
+
+```{r}
+set.seed(12)
+
+# Data for the model
+datalist <- list(N = length(y), x1 = x1, x2 = x2, x3 = x3, x4 = x4, y = y)
+
+# Compile and run with 3 chains, burn-in of 11000 and total sample size of 15000
+model <- jags.model(
+  file = textConnection(model_string2),
+  data = datalist,
+  inits = list(inits(4), inits(5), inits(3)), # Seed for initial values for each chain
+  n.chains = 3
+)
+update(model, n.iter = 12000)
+
+Nrep = 16000
+
+posterior_sample6 <- coda.samples(
+  model,
+  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5", "beta6", "beta7", "beta8", "alpha"),
+  n.iter = Nrep
+)
+```
+
+Check convergence:  
+
+```{r}
+gelman.diag(posterior_sample6)
+```
+
+Again, we see that the distributions of the variables $\beta_2, \beta_3, \beta_4$ and $\beta_5$ failed to converge. We tried with different initial values and different burn-in/posterior sample sizes, but this remained the case for all tested values, so we conclude that the model also failed to converge for cluster 6. We can still try and use the posterior means in our model to predict for the test set. 
+
+We print the summary of the posterior samples below. 
+
+```{r}
+summary(posterior_sample6)
+```
+
+Next, we take the posterior means of the regression parameters as estimated by the model and calculate $\hat{\mu_t}$, which is the mean of the distribution of $y_t$ at time $t$, as estimated by our model. We can then plot the means against the true values of $y_t$ to see how well the model fits the data. 
+
+```{r}
+stat <- as.vector(unlist(summary(posterior_sample6)[1])[1:11])
+mu <- vector(length = length(y))
+mu[1] <- y[1]
+
+# Compare fitted mu with true values of y_t 
+for (t in 2:length(y)) {
+  mu[t] <- stat[2] + stat[1] * y[t-1] +                                                
+             stat[3] * x1[t] +                                                         
+             stat[4] * x2[t] + stat[5] * x2[t]^2 + stat[6] * x2[t]^3 + stat[7] * x2[t]^4 +   
+             stat[8] * x3[t] +                                                        
+             stat[9] * sin(x4[t]) + stat[10] * cos(x4[t])                     
+}
+
+# Create a time variable
+t <- 1:length(y)
+
+# Create a data frame
+data <- data.frame(
+  t = t,
+  y = y,
+  mu = mu
+)
+
+# Create the scatter plot
+ggplot(data, aes(x = mu, y = y)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Actual vs Fitted Values",
+       x = "Fitted Values (mu)",
+       y = "Actual Values (y)") +
+  theme_minimal()
+```
+
+We can see that the model fits the data well, as the means agree with the true values.
+
+Now we want to find the predicted values of y for the test set. This allows us to assess the model performance using performance metrics like MSE.
+
+```{r}
+set.seed(12)
+# Extract the test data vectors
+x1_test <- cluster6_data_test$temp
+x2_test <- cluster6_data_test$tod
+x3_test <- as.integer(cluster6_data_test$weekend)
+x4_test <- cluster6_data_test$toy
+y_test <- cluster6_data_test$Cluster.6
+N_test <- length(y_test)
+
+# Initialize a vector to store the predicted values
+predicted_y <- numeric(N_test)
+
+# Sigma is 1/sqrt(tau), where tau is the precision
+sigma <- 1 / sqrt(stat[11])
+
+# Make predictions using the posterior samples
+mu_test <- numeric(N_test)
+mu_test[1] <- y_test[1]
+predicted_y[1] <- y_test[1]  # Initialize with the first observed value
+
+for (t in 2:N_test) {
+  
+    mu_test[t] <- stat[2] + stat[1] * predicted_y[t-1] +                                                
+             stat[3] * x1_test[t] +                                                         
+             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7] * x2_test[t]^4 +   
+             stat[8] * x3_test[t] +                                                        
+             stat[9] * sin(x4_test[t]) + stat[10] * cos(x4_test[t]) 
+    
+    predicted_y[t] <- rnorm(1, mean = mu_test[t], sd = sigma)
+}
+
+```
+
+We plot the predicted vs. fitted values:
+
+```{r}
+# Create a data frame
+t <- 1:length(y_test)
+
+data_test <- data.frame(
+  t = t,
+  y = y_test,
+  predicted_val = predicted_y
+)
+
+# Create the scatter plot
+ggplot(data_test, aes(x = predicted_val, y = y)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Actual vs Fitted Values",
+       x = "Predicted y",
+       y = "y") +
+  theme_minimal()
+```
+
+Calculate MSE:
+
+```{r}
+# Calculate Mean Squared Error (MSE)
+mse <- mean((predicted_y - y_test)^2)
+
+# Print the results
+cat("MSE:", mse, "\n")
+```
+
+So even though convergence failed, the model predicts the test data well. 
 
 
