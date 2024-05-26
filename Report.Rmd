@@ -1,8 +1,8 @@
 ---
-title: "Report"
+title: "Modeling Household Electricity Demand"
 author: "Xin Guan, Vera Hudak, Yuqi Zhang"
 date: "2024-05-24"
-output: html_document
+output: pdf_document
 ---
 ```{r}
 library(electBook)
@@ -12,12 +12,26 @@ library(lubridate)
 library(proxy)
 library(tibble)
 library(ggplot2)
+library(bookdown)
+library(rjags)
 ```
 
-# Modeling Household Electricity Demand
 
 ## Introduction
 
+Electricity demand forecasting is crucial for energy management, planning, and policy-making. In this report, we explore advanced statistical techniques to model and predict household electricity demand using a dataset of Irish residential consumers. The dataset, provided by the CER Smart Metering Project, includes half-hourly electricity consumption data and survey information from over 2000 households. Given the extensive nature of the data, a primary challenge is to effectively aggregate and analyse it to extract meaningful insights and make accurate predictions.
+
+Our approach involves the following steps:
+
+1. **Exploratory Data Analysis (EDA):** We begin with a thorough exploratory analysis of the dataset to understand the distribution and variability of electricity demand across different households and identify key patterns and trends. This step helps in detecting outliers, understanding the data structure, and selecting relevant features for modelling.
+
+2. **Aggregation:** To manage the large dataset, we use an aggregation method to group households based on daily demand profile similarity. This step reduces the dimensionality of the data and enables us to focus on representative groups, making the modelling process more efficient.
+
+3. **Prediction:** We develop a Bayesian time series regression model that incorporates both temporal dependencies and non-linear relationships between electricity demand and explanatory variables. Bayesian methods offer a robust framework for parameter estimation and uncertainty quantification, providing comprehensive insights into demand patterns.
+
+4. **Evaluation:** The predictive performance of our model is evaluated using appropriate metrics to ensure its accuracy and reliability. We compare the predicted values against the actual data to assess the model's effectiveness in capturing the underlying demand patterns.
+
+This report aims to demonstrate the application of advanced Bayesian techniques in electricity demand forecasting and highlight the benefits of data aggregation in handling large datasets. By leveraging Bayesian methods, we aim to contribute to the development of more adaptive and reliable forecasting models that can meet the evolving challenges of more complicated dataset.
 
 
 ## Explanatory Data Analysis
@@ -247,8 +261,7 @@ print(mean_by_cluster)
 
 ```{r}
 df0 <- Irish$extra
-df0 <- df0 %>% mutate(dow = ifelse(dow %in% c("Sat", "Sun"), "True", "False")) 
-%>% select(-c(holy,time,dateTime))%>%rename(weekend = dow)
+df0 <- df0 %>% mutate(dow = ifelse(dow %in% c("Sat", "Sun"), "True", "False")) %>% select(-c(holy,time,dateTime))%>%rename(weekend = dow)
 df0 <-t(df0)
 ```
 
@@ -331,6 +344,450 @@ for (cl in unique(avg_demand_wide$cluster)) {
 ```
 
 
+
+## Linear Regression Model
+
+### Data Preparation
+
+We first prepare the data for each cluster.
+
+```{r}
+aggregated_data <- read.csv("AggregatedData1.csv")
+daily_data <- read.csv("Daily_AggregatedData1.csv")
+
+cluster1 <- aggregated_data[, -c(2,3,4,5,6)]
+cluster2 <- aggregated_data[, -c(1,3,4,5,6)]
+cluster3 <- aggregated_data[, -c(1,2,4,5,6)]
+cluster4 <- aggregated_data[, -c(1,2,3,5,6)]
+cluster5 <- aggregated_data[, -c(1,2,3,4,6)]
+cluster6 <- aggregated_data[, -c(1,2,3,4,5)]
+
+cluster1_trans <- cluster1 %>%
+  mutate(Cluster.1_lag1 = lag(Cluster.1, n = 1)) %>%
+  mutate(
+    tod_poly1 = tod,
+    tod_poly2 = tod^2,
+    tod_poly3 = tod^3,
+    tod_poly4 = tod^4,
+    weekend_dummy = ifelse(weekend == "TRUE", 1, 0),
+    toy_sin = sin(toy),
+    toy_cos = cos(toy)
+  ) %>%
+  na.omit()
+
+cluster2_trans <- cluster2 %>%
+  mutate(Cluster.2_lag1 = lag(Cluster.2, n = 1)) %>%
+  mutate(
+    tod_poly1 = tod,
+    tod_poly2 = tod^2,
+    tod_poly3 = tod^3,
+    tod_poly4 = tod^4,
+    weekend_dummy = ifelse(weekend == "TRUE", 1, 0),
+    toy_sin = sin(toy),
+    toy_cos = cos(toy)
+  ) %>%
+  na.omit()
+
+cluster3_trans <- cluster3 %>%
+  mutate(Cluster.3_lag1 = lag(Cluster.3, n = 1)) %>%
+  mutate(
+    tod_poly1 = tod,
+    tod_poly2 = tod^2,
+    tod_poly3 = tod^3,
+    tod_poly4 = tod^4,
+    weekend_dummy = ifelse(weekend == "TRUE", 1, 0),
+    toy_sin = sin(toy),
+    toy_cos = cos(toy)
+  ) %>%
+  na.omit()
+
+
+cluster4_trans <- cluster4 %>%
+  mutate(Cluster.4_lag1 = lag(Cluster.4, n = 1)) %>%
+  mutate(
+    tod_poly1 = tod,
+    tod_poly2 = tod^2,
+    tod_poly3 = tod^3,
+    tod_poly4 = tod^4,
+    weekend_dummy = ifelse(weekend == "TRUE", 1, 0),
+    toy_sin = sin(toy),
+    toy_cos = cos(toy)
+  ) %>%
+  na.omit()
+
+cluster5_trans <- cluster5 %>%
+  mutate(Cluster.5_lag1 = lag(Cluster.5, n = 1)) %>%
+  mutate(
+    tod_poly1 = tod,
+    tod_poly2 = tod^2,
+    tod_poly3 = tod^3,
+    tod_poly4 = tod^4,
+    weekend_dummy = ifelse(weekend == "TRUE", 1, 0),
+    toy_sin = sin(toy),
+    toy_cos = cos(toy)
+  ) %>%
+  na.omit()
+
+cluster6_trans <- cluster6 %>%
+  mutate(Cluster.6_lag1 = lag(Cluster.6, n = 1)) %>%
+  mutate(
+    tod_poly1 = tod,
+    tod_poly2 = tod^2,
+    tod_poly3 = tod^3,
+    tod_poly4 = tod^4,
+    weekend_dummy = ifelse(weekend == "TRUE", 1, 0),
+    toy_sin = sin(toy),
+    toy_cos = cos(toy)
+  ) %>%
+  na.omit()
+```
+
+### Clusrer 1
+
+**Linear Regression Model for Cluster 1**
+
+On the basis of `cluster1_trans`, we fit a linear regression model and evaluate its performance:
+
+```{r}
+# Split the data into training and testing sets
+train_index_1 <- 1:floor(0.8 * nrow(cluster1_trans))
+train_data_1 <- cluster1_trans[train_index_1, ]
+test_data_1 <- cluster1_trans[-train_index_1, ]
+
+# Fit the linear regression model
+linear_model_1 <- lm(Cluster.1 ~ Cluster.1_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_1)
+```
+
+**Performance of Predictions**
+
+```{r}
+# Make predictions on the testing set
+test_data_1$predictions <- predict(linear_model_1, newdata = test_data_1)
+
+# Calculate prediction error metrics
+mae_1 <- mean(abs(test_data_1$Cluster.1 - test_data_1$predictions))
+mse_1 <- mean((test_data_1$Cluster.1 - test_data_1$predictions)^2)
+rmse_1 <- sqrt(mse_1)
+
+# Print the results
+cat("Mean Absolute Error (MAE):", mae_1, "\n")
+cat("Mean Squared Error (MSE):", mse_1, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse_1, "\n")
+```
+
+```{r}
+# Plot predicted vs true values
+ggplot(test_data_1, aes(x = Cluster.1, y = predictions)) +
+  geom_point(color = 'blue', alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = 'red', linetype = "dashed") +
+  labs(title = "Predicted vs True Values",
+       x = "True Values",
+       y = "Predicted Values") +
+  theme_minimal()
+```
+
+**Linear Regression Model Summary**
+
+```{r}
+summary(linear_model_1)
+```
+
+### Cluster 2
+
+**Linear Regression Model for Cluster 2**
+
+```{r}
+# Split the data into training and testing sets
+train_index_2 <- 1:floor(0.8 * nrow(cluster2_trans))
+train_data_2 <- cluster2_trans[train_index_2, ]
+test_data_2 <- cluster2_trans[-train_index_2, ]
+
+# Fit the linear regression model
+linear_model_2 <- lm(Cluster.2 ~ Cluster.2_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_2)
+```
+
+**Performance of Predictions**
+
+```{r}
+# Make predictions on the testing set
+test_data_2$predictions <- predict(linear_model_2, newdata = test_data_2)
+
+# Calculate prediction error metrics
+mae_2 <- mean(abs(test_data_2$Cluster.2 - test_data_2$predictions))
+mse_2 <- mean((test_data_2$Cluster.2 - test_data_2$predictions)^2)
+rmse_2 <- sqrt(mse_2)
+
+# Print the results
+cat("Mean Absolute Error (MAE):", mae_2, "\n")
+cat("Mean Squared Error (MSE):", mse_2, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse_2, "\n")
+```
+
+```{r}
+# Plot predicted vs true values
+ggplot(test_data_2, aes(x = Cluster.2, y = predictions)) +
+  geom_point(color = 'blue', alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = 'red', linetype = "dashed") +
+  labs(title = "Predicted vs True Values",
+       x = "True Values",
+       y = "Predicted Values") +
+  theme_minimal()
+```
+
+**Linear Regression Model Summary**
+
+```{r}
+summary(linear_model_2)
+```
+
+
+### Cluster 3
+
+**Linear Regression Model for Cluster 3**
+
+```{r}
+# Split the data into training and testing sets
+train_index_3 <- 1:floor(0.8 * nrow(cluster3_trans))
+train_data_3 <- cluster3_trans[train_index_3, ]
+test_data_3 <- cluster3_trans[-train_index_3, ]
+
+# Fit the linear regression model
+linear_model_3 <- lm(Cluster.3 ~ Cluster.3_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_3)
+```
+
+**Performance of Predictions**
+
+```{r}
+# Make predictions on the testing set
+test_data_3$predictions <- predict(linear_model_3, newdata = test_data_3)
+
+# Calculate prediction error metrics
+mae_3 <- mean(abs(test_data_3$Cluster.3 - test_data_3$predictions))
+mse_3 <- mean((test_data_3$Cluster.3 - test_data_3$predictions)^2)
+rmse_3 <- sqrt(mse_3)
+
+# Print the results
+cat("Mean Absolute Error (MAE):", mae_3, "\n")
+cat("Mean Squared Error (MSE):", mse_3, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse_3, "\n")
+```
+
+```{r}
+# Plot predicted vs true values
+ggplot(test_data_3, aes(x = Cluster.3, y = predictions)) +
+  geom_point(color = 'blue', alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = 'red', linetype = "dashed") +
+  labs(title = "Predicted vs True Values",
+       x = "True Values",
+       y = "Predicted Values") +
+  theme_minimal()
+```
+
+**Linear Regression Model Summary**
+
+```{r}
+summary(linear_model_3)
+```
+
+### Cluster 4
+
+**Linear Regression Model for Cluster 4**
+
+```{r}
+# Split the data into training and testing sets
+train_index_4 <- 1:floor(0.8 * nrow(cluster4_trans))
+train_data_4 <- cluster4_trans[train_index_4, ]
+test_data_4 <- cluster4_trans[-train_index_4, ]
+
+# Fit the linear regression model
+linear_model_4 <- lm(Cluster.4 ~ Cluster.4_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_4)
+
+# Make predictions on the testing set
+test_data_4$predictions <- predict(linear_model_4, newdata = test_data_4)
+
+```
+
+**Performance of Predictions**
+
+```{r}
+# Calculate prediction error metrics
+mae_4 <- mean(abs(test_data_4$Cluster.4 - test_data_4$predictions))
+mse_4 <- mean((test_data_4$Cluster.4 - test_data_4$predictions)^2)
+rmse_4 <- sqrt(mse_4)
+
+# Print the results
+cat("Mean Absolute Error (MAE):", mae_4, "\n")
+cat("Mean Squared Error (MSE):", mse_4, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse_4, "\n")
+```
+
+
+```{r}
+# Plot predicted vs true values
+ggplot(test_data_4, aes(x = Cluster.4, y = predictions)) +
+  geom_point(color = 'blue', alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = 'red', linetype = "dashed") +
+  labs(title = "Predicted vs True Values",
+       x = "True Values",
+       y = "Predicted Values") +
+  theme_minimal()
+```
+
+**Linear Regression Model Summary**
+
+```{r}
+summary(linear_model_4)
+```
+
+
+### Cluster 5
+
+**Linear Regression Model for Cluster 5**
+
+```{r}
+# Split the data into training and testing sets
+train_index_5 <- 1:floor(0.8 * nrow(cluster5_trans))
+train_data_5 <- cluster5_trans[train_index_5, ]
+test_data_5 <- cluster5_trans[-train_index_5, ]
+
+# Fit the linear regression model
+linear_model_5 <- lm(Cluster.5 ~ Cluster.5_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_5)
+```
+
+**Performance of Predictions**
+
+```{r}
+# Make predictions on the testing set
+test_data_5$predictions <- predict(linear_model_5, newdata = test_data_5)
+
+# Calculate prediction error metrics
+mae_5 <- mean(abs(test_data_5$Cluster.5 - test_data_5$predictions))
+mse_5 <- mean((test_data_5$Cluster.5 - test_data_5$predictions)^2)
+rmse_5 <- sqrt(mse_5)
+
+# Print the results
+cat("Mean Absolute Error (MAE):", mae_5, "\n")
+cat("Mean Squared Error (MSE):", mse_5, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse_5, "\n")
+```
+
+
+```{r}
+# Plot predicted vs true values
+ggplot(test_data_5, aes(x = Cluster.5, y = predictions)) +
+  geom_point(color = 'blue', alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = 'red', linetype = "dashed") +
+  labs(title = "Predicted vs True Values",
+       x = "True Values",
+       y = "Predicted Values") +
+  theme_minimal()
+```
+
+**Linear Regression Model Summary**
+
+```{r}
+summary(linear_model_5)
+```
+
+### Cluster 6
+
+**Linear Regression Model for Cluster 6**
+
+```{r}
+# Split the data into training and testing sets
+train_index_6 <- 1:floor(0.8 * nrow(cluster6_trans))
+train_data_6 <- cluster6_trans[train_index_6, ]
+test_data_6 <- cluster6_trans[-train_index_6, ]
+
+# Fit the linear regression model
+linear_model_6 <- lm(Cluster.6 ~ Cluster.6_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_6)
+```
+
+**Performance of Predictions**
+
+```{r}
+# Make predictions on the testing set
+test_data_6$predictions <- predict(linear_model_6, newdata = test_data_6)
+
+# Calculate prediction error metrics
+mae_6 <- mean(abs(test_data_6$Cluster.6 - test_data_6$predictions))
+mse_6 <- mean((test_data_6$Cluster.6 - test_data_6$predictions)^2)
+rmse_6 <- sqrt(mse_6)
+
+# Print the results
+cat("Mean Absolute Error (MAE):", mae_6, "\n")
+cat("Mean Squared Error (MSE):", mse_6, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse_6, "\n")
+```
+
+```{r}
+# Plot predicted vs true values
+ggplot(test_data_6, aes(x = Cluster.6, y = predictions)) +
+  geom_point(color = 'blue', alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = 'red', linetype = "dashed") +
+  labs(title = "Predicted vs True Values",
+       x = "True Values",
+       y = "Predicted Values") +
+  theme_minimal()
+```
+
+**Linear Regression Model Summary**
+
+```{r}
+summary(linear_model_6)
+```
+
+### Conclusion for Linear Regression Models
+
+```{r performance-table, results='asis'}
+coefficients_1 <- summary(linear_model_1)$coefficients
+coefficients_2 <- summary(linear_model_2)$coefficients
+coefficients_3 <- summary(linear_model_3)$coefficients
+coefficients_4 <- summary(linear_model_4)$coefficients
+coefficients_5 <- summary(linear_model_5)$coefficients
+coefficients_6 <- summary(linear_model_6)$coefficients
+
+performance_1 <- data.frame(MAE = mae_1, MSE = mse_1, RMSE = rmse_1)
+performance_2 <- data.frame(MAE = mae_2, MSE = mse_2, RMSE = rmse_2)
+performance_3 <- data.frame(MAE = mae_3, MSE = mse_3, RMSE = rmse_3)
+performance_4 <- data.frame(MAE = mae_4, MSE = mse_4, RMSE = rmse_4)
+performance_5 <- data.frame(MAE = mae_5, MSE = mse_5, RMSE = rmse_5)
+performance_6 <- data.frame(MAE = mae_6, MSE = mse_6, RMSE = rmse_6)
+
+performance_summary <- rbind(
+  data.frame(Cluster = "Cluster 1", performance_1),
+  data.frame(Cluster = "Cluster 2", performance_2),
+  data.frame(Cluster = "Cluster 3", performance_3),
+  data.frame(Cluster = "Cluster 4", performance_4),
+  data.frame(Cluster = "Cluster 5", performance_5),
+  data.frame(Cluster = "Cluster 6", performance_6)
+)
+
+knitr::kable(performance_summary, caption = "Performance Metrics for Each Cluster", booktabs = TRUE)
+```
+
+
+```{r coefficients-table, results='asis'}
+coef_summary <- data.frame(
+  #Variable = rownames(coefficients_1),
+  `Cluster 1` = coefficients_1[, "Estimate"],
+  `Cluster 2` = coefficients_2[, "Estimate"],
+  `Cluster 3` = coefficients_3[, "Estimate"],
+  `Cluster 4` = coefficients_4[, "Estimate"],
+  `Cluster 5` = coefficients_5[, "Estimate"],
+  `Cluster 6` = coefficients_6[, "Estimate"]
+)
+
+knitr::kable(coef_summary, caption = "Coefficients Summary for Each Cluster", booktabs = TRUE)
+```
+
+The tables referred to here as Table 1 and Table 2 provide a detailed overview of the initial performance metrics (using MAE (Mean Absolute Error), MSE (Mean Squared Error), and RMSE (Root Mean Squared Error)) and model coefficients for each cluster. These serve as a foundational baseline for assessing the effectiveness of the linear regression models. The primary purpose of these tables is to establish initial values and benchmarks for evaluating model performance. The insights gained from these metrics and coefficients are critical for understanding the model's predictive capabilities and identifying areas for potential improvement.
+
+This foundational information will guide further analysis and model refinement, thereby enhancing our understanding of the underlying structure of the dataset and the effectiveness of the linear regression models.
+
+
+
+
 ## Bayesian Model
 
 Load aggregated dataset:
@@ -384,10 +841,6 @@ $$
 $$
 
 We write the model described above as a string that we feed to JAGS with the data to fit our model. 
-
-```{r}
-library(rjags)
-```
 
 ```{r}
 model_string2 <- "model {
@@ -1433,4 +1886,23 @@ cat("MSE:", mse, "\n")
 
 So even though convergence failed, the model predicts the test data well. 
 
+
+
+## Conclusion
+
+In this study, we successfully developed and tested a Bayesian time series regression model to forecast household electricity demand. Our exploration began with a detailed exploratory data analysis (EDA), followed by effective data aggregation strategies, and culminated in the adoption of Bayesian methods for prediction, which were rigorously evaluated against standard performance metrics. We summarise our work as follows.
+
+1. **Exploratory Data Analysis (EDA):** We commenced with a comprehensive analysis to understand the distribution and variability of electricity demand. This phase involved identifying key patterns, trends, and outliers, which facilitated the selection of relevant features for further modelling.
+
+2. **Data Aggregation:** By clustering households based on their daily demand profiles, we reduced the dataset's dimensionality. This enabled more focused and efficient modelling, making the process manageable despite the dataset's large size.
+
+3. **Model Development:** We implemented a Bayesian time series regression model that integrates non-linear transformations and accounts for temporal dependencies. This model structure was chosen based on its suitability for the dataset characteristics highlighted in the EDA phase.
+
+4. **Model Evaluation:** The predictive accuracy of the model was assessed using metrics such as Mean Squared Error (MSE). Comparisons were made between our Bayesian approach and traditional linear regression models to underline the strengths of our methodology.
+
+Our findings reveal that Bayesian models, equipped with non-linear transformations and temporal dynamics, provide a robust framework for capturing complex patterns in electricity demand. The performance of the model, highlighted by its ability to accommodate seasonal variations and daily fluctuations, demonstrates its potential utility in practical energy management scenarios. Notably, the comparison of Bayesian approaches with traditional linear regression models showcased the former’s superior capability in handling large, noisy datasets typical in smart metering environments.
+
+Looking forward, this research opens several avenues for further investigation. Future studies could explore the integration of additional predictive factors such as demographic and economic indicators to enhance the model's accuracy. Additionally, the application of more sophisticated statistical techniques could be considered to improve the adaptability and predictive performance of the models under varying conditions.
+
+The implications of this research are significant, offering a promising direction for energy policymakers and utility companies to enhance their demand forecasting capabilities, ultimately leading to more efficient and sustainable energy management practices.
 

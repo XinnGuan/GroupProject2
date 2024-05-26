@@ -9,16 +9,18 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-
 ```{r message=FALSE, warning=FALSE}
 library(dplyr)
 library(caret)
 library(ggplot2)
 library(rjags)
 library(coda)
+library(bookdown)
 ```
 
-# Data Preparation
+## Linear Regression Model
+
+### Data Preparation
 
 We first prepare the data for each cluster.
 
@@ -113,9 +115,9 @@ cluster6_trans <- cluster6 %>%
   na.omit()
 ```
 
-# Clusrer 1
+### Clusrer 1
 
-## Linear Regression Model for Cluster 1
+**Linear Regression Model for Cluster 1**
 
 On the basis of `cluster1_trans`, we fit a linear regression model and evaluate its performance:
 
@@ -129,7 +131,7 @@ test_data_1 <- cluster1_trans[-train_index_1, ]
 linear_model_1 <- lm(Cluster.1 ~ Cluster.1_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_1)
 ```
 
-## Performance of Predictions
+**Performance of Predictions**
 
 ```{r}
 # Make predictions on the testing set
@@ -157,27 +159,15 @@ ggplot(test_data_1, aes(x = Cluster.1, y = predictions)) +
   theme_minimal()
 ```
 
-## Linear Regression Model Summary
+**Linear Regression Model Summary**
 
 ```{r}
 summary(linear_model_1)
 ```
 
-## Analysis
+### Cluster 2
 
-- **Coefficients**:
-  - `Cluster.1_lag1`: The coefficient is very high and significant, indicating a strong autocorrelation in the data.
-  - `temp`: The negative coefficient suggests that an increase in temperature slightly decreases `Cluster.1`.
-  - `tod_poly1`, `tod_poly2`, `tod_poly3`, and `tod_poly4`: These terms capture the non-linear effect of the time of day. Significant coefficients indicate a polynomial relationship with `Cluster.1`.
-  - `weekend_dummy`: The positive and significant coefficient indicates that `Cluster.1` is higher on weekends compared to weekdays.
-  - `toy_sin` and `toy_cos`: These coefficients are not significant, suggesting that the trigonometric transformation of the time of year might not be a strong predictor for `Cluster.1`.
-
-- **Model Fit**:
-  - The R-squared value of 0.9623 indicates that the model explains 96.23% of the variance in `Cluster.1`, which suggests a very good fit.
-
-# Cluster 2
-
-## Linear Regression Model for Cluster 2
+**Linear Regression Model for Cluster 2**
 
 ```{r}
 # Split the data into training and testing sets
@@ -189,7 +179,7 @@ test_data_2 <- cluster2_trans[-train_index_2, ]
 linear_model_2 <- lm(Cluster.2 ~ Cluster.2_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_2)
 ```
 
-## Performance of Predictions
+**Performance of Predictions**
 
 ```{r}
 # Make predictions on the testing set
@@ -217,16 +207,16 @@ ggplot(test_data_2, aes(x = Cluster.2, y = predictions)) +
   theme_minimal()
 ```
 
-## Linear Regression Model Summary
+**Linear Regression Model Summary**
 
 ```{r}
 summary(linear_model_2)
 ```
 
 
-# Cluster 3
+### Cluster 3
 
-## Linear Regression Model for Cluster 3
+**Linear Regression Model for Cluster 3**
 
 ```{r}
 # Split the data into training and testing sets
@@ -238,7 +228,7 @@ test_data_3 <- cluster3_trans[-train_index_3, ]
 linear_model_3 <- lm(Cluster.3 ~ Cluster.3_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_3)
 ```
 
-## Performance of Predictions
+**Performance of Predictions**
 
 ```{r}
 # Make predictions on the testing set
@@ -266,15 +256,15 @@ ggplot(test_data_3, aes(x = Cluster.3, y = predictions)) +
   theme_minimal()
 ```
 
-## Linear Regression Model Summary
+**Linear Regression Model Summary**
 
 ```{r}
 summary(linear_model_3)
 ```
 
-# Cluster 4
+### Cluster 4
 
-## Linear Regression Model for Cluster 4
+**Linear Regression Model for Cluster 4**
 
 ```{r}
 # Split the data into training and testing sets
@@ -290,7 +280,7 @@ test_data_4$predictions <- predict(linear_model_4, newdata = test_data_4)
 
 ```
 
-## Performance of Predictions
+**Performance of Predictions**
 
 ```{r}
 # Calculate prediction error metrics
@@ -316,16 +306,16 @@ ggplot(test_data_4, aes(x = Cluster.4, y = predictions)) +
   theme_minimal()
 ```
 
-## Linear Regression Model Summary
+**Linear Regression Model Summary**
 
 ```{r}
 summary(linear_model_4)
 ```
 
 
-# Cluster 5
+### Cluster 5
 
-## Linear Regression Model for Cluster 5
+**Linear Regression Model for Cluster 5**
 
 ```{r}
 # Split the data into training and testing sets
@@ -337,7 +327,7 @@ test_data_5 <- cluster5_trans[-train_index_5, ]
 linear_model_5 <- lm(Cluster.5 ~ Cluster.5_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_5)
 ```
 
-## Performance of Predictions
+**Performance of Predictions**
 
 ```{r}
 # Make predictions on the testing set
@@ -366,15 +356,15 @@ ggplot(test_data_5, aes(x = Cluster.5, y = predictions)) +
   theme_minimal()
 ```
 
-## Linear Regression Model Summary
+**Linear Regression Model Summary**
 
 ```{r}
 summary(linear_model_5)
 ```
 
-# Cluster 6
+### Cluster 6
 
-## Linear Regression Model for Cluster 6
+**Linear Regression Model for Cluster 6**
 
 ```{r}
 # Split the data into training and testing sets
@@ -386,7 +376,7 @@ test_data_6 <- cluster6_trans[-train_index_6, ]
 linear_model_6 <- lm(Cluster.6 ~ Cluster.6_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_6)
 ```
 
-## Performance of Predictions
+**Performance of Predictions**
 
 ```{r}
 # Make predictions on the testing set
@@ -414,16 +404,15 @@ ggplot(test_data_6, aes(x = Cluster.6, y = predictions)) +
   theme_minimal()
 ```
 
-## Linear Regression Model Summary
+**Linear Regression Model Summary**
 
 ```{r}
 summary(linear_model_6)
 ```
 
-# Conclusion for Linear Regression Models
+### Conclusion for Linear Regression Models
 
-```{r}
-# Extract coefficients and performance metrics for each cluster
+```{r performance-table, results='asis'}
 coefficients_1 <- summary(linear_model_1)$coefficients
 coefficients_2 <- summary(linear_model_2)$coefficients
 coefficients_3 <- summary(linear_model_3)$coefficients
@@ -438,7 +427,6 @@ performance_4 <- data.frame(MAE = mae_4, MSE = mse_4, RMSE = rmse_4)
 performance_5 <- data.frame(MAE = mae_5, MSE = mse_5, RMSE = rmse_5)
 performance_6 <- data.frame(MAE = mae_6, MSE = mse_6, RMSE = rmse_6)
 
-# Combine performance metrics into one data frame
 performance_summary <- rbind(
   data.frame(Cluster = "Cluster 1", performance_1),
   data.frame(Cluster = "Cluster 2", performance_2),
@@ -448,10 +436,11 @@ performance_summary <- rbind(
   data.frame(Cluster = "Cluster 6", performance_6)
 )
 
-# Print performance summary table
-knitr::kable(performance_summary, caption = "Performance Metrics for Each Cluster")
+knitr::kable(performance_summary, caption = "Performance Metrics for Each Cluster", booktabs = TRUE)
+```
 
-# Extract coefficients for each cluster and combine them into a single data frame
+
+```{r coefficients-table, results='asis'}
 coef_summary <- data.frame(
   #Variable = rownames(coefficients_1),
   `Cluster 1` = coefficients_1[, "Estimate"],
@@ -462,9 +451,11 @@ coef_summary <- data.frame(
   `Cluster 6` = coefficients_6[, "Estimate"]
 )
 
-# Print coefficients summary table
-knitr::kable(coef_summary, caption = "Coefficients Summary for Each Cluster")
-
-
+knitr::kable(coef_summary, caption = "Coefficients Summary for Each Cluster", booktabs = TRUE)
 ```
+
+The tables referred to here as Table 1 and Table 2 provide a detailed overview of the initial performance metrics (using MAE (Mean Absolute Error), MSE (Mean Squared Error), and RMSE (Root Mean Squared Error)) and model coefficients for each cluster. These serve as a foundational baseline for assessing the effectiveness of the linear regression models. The primary purpose of these tables is to establish initial values and benchmarks for evaluating model performance. The insights gained from these metrics and coefficients are critical for understanding the model's predictive capabilities and identifying areas for potential improvement.
+
+This foundational information will guide further analysis and model refinement, thereby enhancing our understanding of the underlying structure of the dataset and the effectiveness of the linear regression models.
+
 
