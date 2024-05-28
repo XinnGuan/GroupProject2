@@ -41,37 +41,31 @@ Loading Data:
 load("Irish.RData")
 ```
 
-The file `Irish` contains three data sets, the data set`Irish$indCons` is the 
-electricity demand for 2671 household, with a resolution of half hour over the 
-time period 2019-12-29 to 2020-12-29.
+The file `Irish` contains three data sets, the data set`Irish$indCons` is the electricity demand for 2671 household, with a resolution of half hour over the time period 2019-12-29 to 2020-12-29.
 ```{r}
 head(Irish$indCons[,1:10])
 ```
-The data set `Irish$extra` contains variables such as `tod` (time of day), 
-`toy` (time of year), `dow` (day of the week), and more.
+The data set `Irish$extra` contains variables such as `tod` (time of day), `toy` (time of year), `dow` (day of the week), and more.
 ```{r}
 head(Irish$extra)
 ```
-
+The data set `Irish$survey` contains responses from a household survey, including variables such as SOCIALCLASS, OWNERSHIP, BUILT.YEAR, and others. The variables in this data frame doesn't show any significant relationship with demand, hence we will not use this data in our project.
 ```{r}
 head(Irish$survey)
 ```
 
+### Count zeros in dataset
+```{r}
+sum(apply(Irish$indCons, 2, function(x) sum(x == 0)))
+print(16799*2674)
+```
 
 ```{r}
-# Count zeros in each row
 row_zero_counts <- rowSums(Irish$indCons == 0)
 
 hist(row_zero_counts)
 ```
-
-
-```{r}
-sum(apply(Irish$indCons, 2, function(x) sum(x == 0)))
-#There are many zeros in the demand data frame
-print(16799*2674)
-```
-
+There are more than 17,000 zero values in the dataset. Summing over the rows for each time point, there is no any time point have significantly large number of zeros.
 ```{r}
 # Count zeros in each column
 col_zero_counts <- colSums(Irish$indCons == 0)
@@ -88,43 +82,41 @@ sum(col_zero_counts > 30*48)
 
 ```{r}
 cols_to_remove <- which(col_zero_counts > 30*48)
-```
 
-```{r}
 df0 <- Irish$indCons[,-cols_to_remove]
 
 df0$time_mean_dem <- rowSums(Irish$indCons)/ncol(Irish$indCons)
 ```
 
+By examining the histogram of zero counts for each household below, we found that some households had zero electricity usage for over one month during the year. Therefore, we decided to remove these 27 households from our dataset.
 
-
+### Visualizing main characteristics
+Compute the mean demand for each time point, for visualization and examining pattern.
 ```{r}
 df <- cbind(df0[,"time_mean_dem"],Irish$extra)
 colnames(df) <- c("time_mean_demand", colnames(Irish$extra))
-```
-
-
-
-```{r}
 head(df)
 ```
-
-## Visualizing main characteristics
 
 ```{r}
 # Basic summary of each column
 summary(df)
-#`holy` is all FALSE
+```
+The variable `holy` is all FALSE, we will remove this variable.
 
+```{r}
 # Time series plot of time_mean_demand
 ggplot(df, aes(x=dateTime, y=time_mean_demand)) + geom_line() + 
   ggtitle("Time Series of Mean Demand")
+```
+Plot the time series of mean daily demand throughout the year. The plot presents a periodic pattern of electricity demand, with higher demand during the winter months and lower demand during the summer months.
 
+```{r}
 # Boxplots to check variation of time_mean_demand across days of the week
 ggplot(df, aes(x=dow, y=time_mean_demand)) + geom_boxplot() + 
   ggtitle("Demand Variation by Day of Week")
-
 ```
+The box plots of mean demand for each day of the week shows that the demand patterns are relatively consistent across the weekdays, with slight variations during the weekends. The box plots reveal that weekends tend to have slightly higher demand compared to weekdays.
 
 ```{r}
 # Scatter plot of time_mean_demand vs. temperature
@@ -134,7 +126,7 @@ ggplot(df, aes(x=temp, y=time_mean_demand)) +
     labs(x="Temperature", y="Mean Demand", 
          title="Relationship Between Temperature and Mean Demand")
 ```
-
+The above plot explores the relationship between temperature and mean demand. The scatter plot suggests an inverse relationship, where higher temperatures generally correlate with lower electricity demand.
 
 ```{r}
 # Line plot for time_mean_demand across different times of day
@@ -145,11 +137,13 @@ ggplot(df, aes(x=tod, y=time_mean_demand, group=1)) +
          title="Mean Demand Across Different Times of Day")
 
 ```
-
+The plot above illustrates the mean demand across different times of the day. The plot shows a
+clear pattern, with demand peaking in the early morning, around noon, and in the evening, likely
+reflecting typical household activity patterns.
 
 ## Aggregation
 
-
+### Formatting the data for clustering
 ```{r}
 # Load the dataset
 data(Irish)
@@ -186,18 +180,21 @@ avg_demand_wide <- avg_demand %>%
 print(avg_demand_wide)
 ```
 
-
+### Compute cosine similarity and corresponding distance
 ```{r}
-# Compute the cosine similarity matrix
-compute_cosine_similarity_matrix <- function(data) {
+# Compute the cosine similarity, and use 1-similarity as distance
+compute_cosine_distance_matrix <- function(data) {
   data_matrix <- as.matrix(data[-1])  # Remove the household_id column
   similarity_matrix <- proxy::simil(data_matrix, method = "cosine")
   dist_matrix <- 1 - similarity_matrix
   return(as.matrix(dist_matrix))
 }
 
-cosine_distances <- compute_cosine_similarity_matrix(avg_demand_wide)
+cosine_distances <- compute_cosine_distance_matrix(avg_demand_wide)
+```
 
+### Perform hierarchical slustering
+```{r}
 # Hierarchical clustering
 hc <- hclust(as.dist(cosine_distances), method = "ward.D2")
 
@@ -207,6 +204,7 @@ plot(hc, labels = FALSE, main = "Dendrogram of Households", xlab = "Households",
 abline(h=1,col="red")
 ```
 
+### Clusters information
 ```{r}
 # Create clusters
 clusters <- cutree(hc, k = 6)
@@ -239,7 +237,7 @@ cluster_analysis <- df_with_clusters %>%
 print(cluster_analysis)
 ```
 
-
+### Aggregate data for households in the same cluster
 ```{r}
 df_t <- as.data.frame(t(df[,-c(ncol(df)-1,ncol(df))]))
 
@@ -256,7 +254,7 @@ mean_by_cluster <- as.data.frame(mean_by_cluster[,-1])
 rownames(mean_by_cluster) <- c("Cluster 1","Cluster 2","Cluster 3","Cluster 4",
                                "Cluster 5","Cluster 6")
 # View the result
-print(mean_by_cluster)
+head(mean_by_cluster[,1:10])
 ```
 
 ```{r}
@@ -275,25 +273,18 @@ mean_by_cluster <- mean_by_cluster %>%
          weekend = as.logical(weekend),
          temp = as.numeric(temp))
 ```
-
+The data is formatted and ready for model fitting, uncomment the following code to save data as CSV file/
 ```{r}
-# Save as CSV file
 #write.csv(mean_by_cluster, file = "AggregatedData1.csv", row.names = FALSE)
 ```
 
-
-
 ```{r}
 avg_demand_wide$cluster <- clusters
-```
-
-
-```{r}
 #write.csv(avg_demand_wide, file = "cluster_data.csv", row.names = FALSE)
 ```
 
-
-
+### Plot the mean demand and sample demands for each cluster
+In the following plots, we want to visually show if the clustering give a large between-clusters discrepancy and a small within-cluster discrepancy.
 ```{r}
 # Identify the time columns by excluding non-time columns
 time_columns <- grep("^\\d{2}:\\d{2}:\\d{2}$", colnames(avg_demand_wide), 
@@ -455,7 +446,9 @@ train_data_1 <- cluster1_trans[train_index_1, ]
 test_data_1 <- cluster1_trans[-train_index_1, ]
 
 # Fit the linear regression model
-linear_model_1 <- lm(Cluster.1 ~ Cluster.1_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_1)
+linear_model_1 <- lm(Cluster.1 ~ Cluster.1_lag1 + temp + tod_poly1 + tod_poly2 
+                     + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + 
+                       toy_cos, data = train_data_1)
 ```
 
 **Performance of Predictions**
@@ -503,7 +496,9 @@ train_data_2 <- cluster2_trans[train_index_2, ]
 test_data_2 <- cluster2_trans[-train_index_2, ]
 
 # Fit the linear regression model
-linear_model_2 <- lm(Cluster.2 ~ Cluster.2_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_2)
+linear_model_2 <- lm(Cluster.2 ~ Cluster.2_lag1 + temp + tod_poly1 + tod_poly2 
+                     + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin 
+                     + toy_cos, data = train_data_2)
 ```
 
 **Performance of Predictions**
@@ -552,7 +547,9 @@ train_data_3 <- cluster3_trans[train_index_3, ]
 test_data_3 <- cluster3_trans[-train_index_3, ]
 
 # Fit the linear regression model
-linear_model_3 <- lm(Cluster.3 ~ Cluster.3_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_3)
+linear_model_3 <- lm(Cluster.3 ~ Cluster.3_lag1 + temp + tod_poly1 + tod_poly2 
+                     + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin 
+                     + toy_cos, data = train_data_3)
 ```
 
 **Performance of Predictions**
@@ -600,7 +597,9 @@ train_data_4 <- cluster4_trans[train_index_4, ]
 test_data_4 <- cluster4_trans[-train_index_4, ]
 
 # Fit the linear regression model
-linear_model_4 <- lm(Cluster.4 ~ Cluster.4_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_4)
+linear_model_4 <- lm(Cluster.4 ~ Cluster.4_lag1 + temp + tod_poly1 + tod_poly2 
+                     + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin 
+                     + toy_cos, data = train_data_4)
 
 # Make predictions on the testing set
 test_data_4$predictions <- predict(linear_model_4, newdata = test_data_4)
@@ -651,7 +650,9 @@ train_data_5 <- cluster5_trans[train_index_5, ]
 test_data_5 <- cluster5_trans[-train_index_5, ]
 
 # Fit the linear regression model
-linear_model_5 <- lm(Cluster.5 ~ Cluster.5_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_5)
+linear_model_5 <- lm(Cluster.5 ~ Cluster.5_lag1 + temp + tod_poly1 + tod_poly2 
+                     + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin 
+                     + toy_cos, data = train_data_5)
 ```
 
 **Performance of Predictions**
@@ -700,7 +701,9 @@ train_data_6 <- cluster6_trans[train_index_6, ]
 test_data_6 <- cluster6_trans[-train_index_6, ]
 
 # Fit the linear regression model
-linear_model_6 <- lm(Cluster.6 ~ Cluster.6_lag1 + temp + tod_poly1 + tod_poly2 + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin + toy_cos, data = train_data_6)
+linear_model_6 <- lm(Cluster.6 ~ Cluster.6_lag1 + temp + tod_poly1 + tod_poly2 
+                     + tod_poly3 + tod_poly4 + weekend_dummy + toy_sin 
+                     + toy_cos, data = train_data_6)
 ```
 
 **Performance of Predictions**
@@ -763,7 +766,9 @@ performance_summary <- rbind(
   data.frame(Cluster = "Cluster 6", performance_6)
 )
 
-knitr::kable(performance_summary, caption = "Performance Metrics for Each Cluster", booktabs = TRUE)
+knitr::kable(performance_summary, 
+             caption = "Performance Metrics for Each Cluster", 
+             booktabs = TRUE)
 ```
 
 
@@ -778,7 +783,8 @@ coef_summary <- data.frame(
   `Cluster 6` = coefficients_6[, "Estimate"]
 )
 
-knitr::kable(coef_summary, caption = "Coefficients Summary for Each Cluster", booktabs = TRUE)
+knitr::kable(coef_summary, caption = "Coefficients Summary for Each Cluster", 
+             booktabs = TRUE)
 ```
 
 The tables referred to here as Table 1 and Table 2 provide a detailed overview of the initial performance metrics (using MAE (Mean Absolute Error), MSE (Mean Squared Error), and RMSE (Root Mean Squared Error)) and model coefficients for each cluster. These serve as a foundational baseline for assessing the effectiveness of the linear regression models. The primary purpose of these tables is to establish initial values and benchmarks for evaluating model performance. The insights gained from these metrics and coefficients are critical for understanding the model's predictive capabilities and identifying areas for potential improvement.
@@ -866,11 +872,11 @@ model_string2 <- "model {
   # Likelihood
   for (t in 2:N) {
     y[t] ~ dnorm(mu[t], tau)
-    mu[t] <- beta0 + alpha * y[t-1] +                                                # intercept and y[t-1]
-             beta1 * x1[t] +                                                         # temp x1
-             beta2 * x2[t] + beta3 * x2[t]^2 + beta4 * x2[t]^3 + beta5 * x2[t]^4 +   # time of day x2
-             beta6 * x3[t] +                                                         # weekend x3 
-             beta7 * sin(x4[t]) + beta8 * cos(x4[t])                                 # time of year x4
+    mu[t] <- beta0 + alpha * y[t-1] +                                               # intercept and y[t-1]
+             beta1 * x1[t] +                                                        # temp x1
+             beta2 * x2[t] + beta3 * x2[t]^2 + beta4 * x2[t]^3 + beta5 * x2[t]^4 +  # time of day x2
+             beta6 * x3[t] +                                                        # weekend x3 
+             beta7 * sin(x4[t]) + beta8 * cos(x4[t])                                # time of year x4
              }
   
 }
@@ -912,7 +918,8 @@ Nrep = 15000
 
 posterior_sample <- coda.samples(
   model,
-  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5", "beta6", "beta7", "beta8", "alpha"),
+  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", 
+                     "beta5", "beta6", "beta7", "beta8", "alpha"),
   n.iter = Nrep
 )
 ```
@@ -1005,7 +1012,7 @@ for (t in 2:N_test) {
   
     mu_test[t] <- stat[2] + stat[1] * predicted_y[t-1] +                                                
              stat[3] * x1_test[t] +                                                         
-             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7] * x2_test[t]^4 +   
+             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3+ stat[7]*x2_test[t]^4+   
              stat[8] * x3_test[t] +                                                        
              stat[9] * sin(x4_test[t]) + stat[10] * cos(x4_test[t]) 
     
@@ -1087,7 +1094,8 @@ Nrep = 15000
 
 posterior_sample2 <- coda.samples(
   model,
-  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5", "beta6", "beta7", "beta8", "alpha"),
+  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", 
+                     "beta5", "beta6", "beta7", "beta8", "alpha"),
   n.iter = Nrep
 )
 ```
@@ -1172,7 +1180,7 @@ for (t in 2:N_test) {
   
     mu_test[t] <- stat[2] + stat[1] * predicted_y[t-1] +                                                
              stat[3] * x1_test[t] +                                                         
-             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7] * x2_test[t]^4 +   
+             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7]*x2_test[t]^4+   
              stat[8] * x3_test[t] +                                                        
              stat[9] * sin(x4_test[t]) + stat[10] * cos(x4_test[t]) 
     
@@ -1255,7 +1263,8 @@ Nrep = 16000
 
 posterior_sample3 <- coda.samples(
   model,
-  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5", "beta6", "beta7", "beta8", "alpha"),
+  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", 
+                     "beta5", "beta6", "beta7", "beta8", "alpha"),
   n.iter = Nrep
 )
 ```
@@ -1339,7 +1348,7 @@ for (t in 2:N_test) {
   
     mu_test[t] <- stat[2] + stat[1] * predicted_y[t-1] +                                                
              stat[3] * x1_test[t] +                                                         
-             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7] * x2_test[t]^4 +   
+             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7]*x2_test[t]^4+   
              stat[8] * x3_test[t] +                                                        
              stat[9] * sin(x4_test[t]) + stat[10] * cos(x4_test[t]) 
     
@@ -1424,7 +1433,8 @@ Nrep = 15000
 
 posterior_sample4 <- coda.samples(
   model,
-  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5", "beta6", "beta7", "beta8", "alpha"),
+  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", 
+                     "beta5", "beta6", "beta7", "beta8", "alpha"),
   n.iter = Nrep
 )
 ```
@@ -1508,7 +1518,7 @@ for (t in 2:N_test) {
   
     mu_test[t] <- stat[2] + stat[1] * predicted_y[t-1] +                                                
              stat[3] * x1_test[t] +                                                         
-             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7] * x2_test[t]^4 +   
+             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7]*x2_test[t]^4+   
              stat[8] * x3_test[t] +                                                        
              stat[9] * sin(x4_test[t]) + stat[10] * cos(x4_test[t]) 
     
@@ -1591,7 +1601,8 @@ Nrep = 16000
 
 posterior_sample5 <- coda.samples(
   model,
-  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5", "beta6", "beta7", "beta8", "alpha"),
+  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", 
+                     "beta5", "beta6", "beta7", "beta8", "alpha"),
   n.iter = Nrep
 )
 ```
@@ -1675,7 +1686,7 @@ for (t in 2:N_test) {
   
     mu_test[t] <- stat[2] + stat[1] * predicted_y[t-1] +                                                
              stat[3] * x1_test[t] +                                                         
-             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7] * x2_test[t]^4 +   
+             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7]*x2_test[t]^4+   
              stat[8] * x3_test[t] +                                                        
              stat[9] * sin(x4_test[t]) + stat[10] * cos(x4_test[t]) 
     
@@ -1759,7 +1770,8 @@ Nrep = 16000
 
 posterior_sample6 <- coda.samples(
   model,
-  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", "beta5", "beta6", "beta7", "beta8", "alpha"),
+  variable.names = c("tau", "beta0", "beta1", "beta2", "beta3", "beta4", 
+                     "beta5", "beta6", "beta7", "beta8", "alpha"),
   n.iter = Nrep
 )
 ```
@@ -1843,7 +1855,7 @@ for (t in 2:N_test) {
   
     mu_test[t] <- stat[2] + stat[1] * predicted_y[t-1] +                                                
              stat[3] * x1_test[t] +                                                         
-             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7] * x2_test[t]^4 +   
+             stat[4] * x2_test[t] + stat[5] * x2_test[t]^2 + stat[6] * x2_test[t]^3 + stat[7]*x2_test[t]^4+   
              stat[8] * x3_test[t] +                                                        
              stat[9] * sin(x4_test[t]) + stat[10] * cos(x4_test[t]) 
     
